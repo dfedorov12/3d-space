@@ -984,10 +984,10 @@ function openPeer(pid){
     const ex = peers.get(call.peer);
     if(ex?.call){ try{ call.close(); }catch{} return; }
     call.answer(localStream);
-    bindCall(call);
+    bindCall(call, true);   // eingehend → Metadaten der Gegenseite
   });
 
-  peer.on('connection', conn=> bindDataConn(conn));
+  peer.on('connection', conn=> bindDataConn(conn, true));   // eingehend
 
   peer.on('error', err=>{
     // Gäste: belegter Platz → nächsten Slot probieren
@@ -1023,13 +1023,15 @@ function rescan(){
 }
 
 function connectPeer(pid, email){
+  const ex = peers.get(pid);
+  if(ex && (ex.dataConn?.open || ex.call)) return;   // bereits verbunden → nicht doppelt
   const meta = { email:myEmail, name:myName, g:myGender };
-  // Daten-Verbindung (Position/Status)
+  // Daten-Verbindung (Position/Status) – ausgehend (inbound=false): Name kommt per Datenpaket
   const conn = peer.connect(pid, { reliable:false, metadata:meta });
-  bindDataConn(conn, email);
-  // Audio-Call
+  bindDataConn(conn, false, email);
+  // Audio-Call – ausgehend
   const call = peer.call(pid, localStream, { metadata:meta });
-  if(call) bindCall(call, email);
+  if(call) bindCall(call, false);
 }
 
 function ensurePeer(pid, email, name, gender){
@@ -1064,9 +1066,13 @@ function rebuildAvatar(p){
   scene.remove(old); scene.add(av); p.avatar = av;
 }
 
-function bindDataConn(conn, email){
+// WICHTIG: Teilnehmer erst anlegen, wenn die Verbindung WIRKLICH offen ist (nicht beim Versuch).
+// Bei EINGEHENDEN Verbindungen sind die Metadaten die der Gegenseite (echter Name); bei
+// AUSGEHENDEN sind es unsere eigenen → dann NICHT als Name verwenden (Name kommt per Datenpaket).
+function bindDataConn(conn, inbound, email){
   conn.on('open', ()=>{
-    const p = ensurePeer(conn.peer, email || conn.metadata?.email, conn.metadata?.name, conn.metadata?.g);
+    const m = inbound ? (conn.metadata||{}) : {};
+    const p = ensurePeer(conn.peer, email || m.email, m.name, m.g);
     p.dataConn = conn;
     sendState(conn); // sofort meinen Zustand schicken
     renderPeople();
@@ -1076,11 +1082,15 @@ function bindDataConn(conn, email){
   conn.on('error', ()=>{});
 }
 
-function bindCall(call, email){
-  const p = ensurePeer(call.peer, email || call.metadata?.email, call.metadata?.name, call.metadata?.g);
-  p.call = call;
-  monitorIce(p, call);
-  call.on('stream', stream=> attachRemoteAudio(call.peer, stream));
+function bindCall(call, inbound){
+  // ensurePeer erst, wenn ein echter Audiostream ankommt (offline-Ziele lösen das nie aus)
+  call.on('stream', stream=>{
+    const m = inbound ? (call.metadata||{}) : {};
+    const p = ensurePeer(call.peer, m.email, m.name, m.g);
+    p.call = call;
+    monitorIce(p, call);
+    attachRemoteAudio(call.peer, stream);
+  });
   call.on('close', ()=> dropPeer(call.peer));
   call.on('error', ()=>{});
 }
