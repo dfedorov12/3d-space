@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no"/>
+<meta http-equiv="Cache-Control" content="no-cache,no-store,must-revalidate"/>
+<title>DIHAG · 3D-Space</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet"/>
+
+<!-- Auth -->
+<script src="https://alcdn.msauth.net/browser/2.38.2/js/msal-browser.min.js"></script>
+<!-- WebRTC mesh (serverless, public broker) -->
+<script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
+
+<!-- Three.js (ES-Module) → als window.THREE für app.js bereitstellen -->
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+<script type="module">
+  import * as THREE from 'three';
+  import { OrbitControls }   from 'three/addons/controls/OrbitControls.js';
+  import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+  window.THREE = THREE;
+  window.OrbitControls = OrbitControls;
+  window.RoomEnvironment = RoomEnvironment;
+  window.dispatchEvent(new Event('three-ready'));
+</script>
+
+<link rel="stylesheet" href="style.css"/>
+</head>
+<body>
+
+<!-- ── BOOT ───────────────────────────────────────────────────────── -->
+<div id="boot">
+  <div class="boot-logo">🪑</div>
+  <div class="boot-title">DIHAG 3D-Space<small>Virtueller Konferenzraum</small></div>
+  <div class="boot-spinner" id="boot-spinner"></div>
+  <div class="boot-sub" id="boot-sub">Anmeldung läuft…</div>
+  <div class="boot-err" id="boot-err" style="display:none;"></div>
+  <button class="boot-btn" id="boot-btn" style="display:none;" onclick="doLogin()">Mit Microsoft anmelden</button>
+</div>
+
+<!-- ── KEIN ZUGRIFF ───────────────────────────────────────────────── -->
+<div id="no-access">
+  <div class="nac-card">
+    <div style="font-size:56px;margin-bottom:14px">🚪</div>
+    <h2>Kein Zugriff auf den Raum</h2>
+    <p id="nac-msg"></p>
+    <div class="nac-btns">
+      <button class="nac-primary" id="nac-req-btn" onclick="requestAccess()">📧 Freigabe anfragen</button>
+      <button class="nac-ghost" onclick="doLogout()">Abmelden</button>
+    </div>
+    <p id="nac-sent" style="display:none;color:var(--good);margin-top:16px;font-size:13px;font-weight:500">
+      ✓ Anfrage versendet. Die IT meldet sich bei dir.
+    </p>
+    <p id="nac-err" style="display:none;color:#fca5a5;margin-top:12px;font-size:12px"></p>
+  </div>
+</div>
+
+<!-- ── 3D-RAUM ────────────────────────────────────────────────────── -->
+<div id="app">
+  <canvas id="scene"></canvas>
+
+  <!-- Top-Leiste -->
+  <div class="hud" id="hud-top">
+    <div class="brand">
+      <div class="brand-mark">🪑</div>
+      <div class="brand-txt"><b>3D-Space</b><span>DIHAG Konferenzraum</span></div>
+    </div>
+    <div class="room-pill"><span class="live-dot"></span><span id="room-name">Hauptraum</span></div>
+    <div class="hud-spacer"></div>
+    <button class="icon-btn" id="btn-fs" title="Vollbild" onclick="toggleFullscreen()">⛶</button>
+    <div class="me-chip">
+      <span class="me-name" id="me-name">…</span>
+      <span class="me-av" id="me-av">?</span>
+    </div>
+  </div>
+
+  <!-- Teilnehmer -->
+  <div class="hud" id="hud-people">
+    <div class="people-hdr">Im Raum <span id="people-count">1</span></div>
+    <div id="people-list"></div>
+  </div>
+
+  <!-- Steuer-Leiste -->
+  <div class="hud" id="hud-controls">
+    <button class="ctrl on" id="btn-mic" onclick="toggleMic()">
+      <span class="ic" id="mic-ic">🎤</span><span class="lbl" id="mic-lbl">Mikro an</span>
+    </button>
+    <button class="ctrl" id="btn-hand" onclick="toggleHand()">
+      <span class="ic" id="hand-ic">✋</span><span class="lbl">Melden</span>
+    </button>
+    <button class="ctrl" id="btn-view" onclick="cycleView()">
+      <span class="ic">🎥</span><span class="lbl" id="view-lbl">Ansicht</span>
+    </button>
+    <button class="ctrl danger" onclick="leaveRoom()">
+      <span class="ic">🚪</span><span class="lbl">Verlassen</span>
+    </button>
+  </div>
+
+  <!-- Hilfe -->
+  <div class="hud" id="hud-hint">
+    <b>Bewegen</b><br/>
+    <span class="key">W</span><span class="key">A</span><span class="key">S</span><span class="key">D</span> gehen ·
+    Maus ziehen = umsehen · Scrollen = Zoom<br/>
+    <span style="color:var(--accent)">Näher = lauter</span> 🔊
+  </div>
+
+  <!-- Mikro-Gate -->
+  <div id="mic-gate">
+    <div class="mic-gate-card">
+      <div class="big">🎙️</div>
+      <h3>Mikrofon freigeben</h3>
+      <p>Damit du im Raum sprechen kannst, brauchen wir Zugriff auf dein Mikrofon. Du kannst es jederzeit stummschalten.</p>
+      <button onclick="enableMicAndJoin()">Beitreten &amp; sprechen</button>
+    </div>
+  </div>
+
+  <div id="toast"></div>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>
