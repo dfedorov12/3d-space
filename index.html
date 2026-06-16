@@ -32,7 +32,7 @@
   window.dispatchEvent(new Event('three-ready'));
 </script>
 
-<link rel="stylesheet" href="style.css?v=2"/>
+<link rel="stylesheet" href="style.css?v=3"/>
 </head>
 <body>
 
@@ -88,21 +88,55 @@
     <div id="people-list"></div>
   </div>
 
+  <!-- Presenter-Banner -->
+  <div class="hud" id="presenter-banner" style="display:none;">
+    🖥 <b><span id="presenter-name"></span></b>&nbsp;teilt den Bildschirm
+  </div>
+
   <!-- Steuer-Leiste -->
   <div class="hud" id="hud-controls">
-    <button class="ctrl on" id="btn-mic" onclick="toggleMic()">
-      <span class="ic" id="mic-ic">🎤</span><span class="lbl" id="mic-lbl">Mikro an</span>
+    <div class="ctrl-mic-wrap">
+      <button class="ctrl on" id="btn-mic" onclick="toggleMic()">
+        <span class="ic" id="mic-ic">🎤</span><span class="lbl" id="mic-lbl">Mikro an</span>
+      </button>
+      <button class="mic-caret" id="btn-mic-dev" onclick="toggleMicMenu()" title="Mikrofon wählen">▾</button>
+      <div id="mic-menu"></div>
+    </div>
+    <button class="ctrl" id="btn-ptt" onclick="togglePTT()" title="Push-to-Talk (Leertaste)">
+      <span class="ic">👆</span><span class="lbl">Push-Talk</span>
     </button>
     <button class="ctrl" id="btn-hand" onclick="toggleHand()">
       <span class="ic" id="hand-ic">✋</span><span class="lbl">Melden</span>
     </button>
+    <button class="ctrl" id="btn-screen" onclick="toggleScreenShare()">
+      <span class="ic">🖥</span><span class="lbl" id="screen-lbl">Teilen</span>
+    </button>
+    <button class="ctrl" id="btn-chat" onclick="toggleChat()">
+      <span class="ic">💬<span id="chat-badge" class="chat-badge" style="display:none;"></span></span><span class="lbl">Chat</span>
+    </button>
     <button class="ctrl" id="btn-view" onclick="cycleView()">
       <span class="ic">🎥</span><span class="lbl" id="view-lbl">Ansicht</span>
+    </button>
+    <button class="ctrl" id="btn-quality" onclick="toggleQuality()" title="Performance">
+      <span class="ic">⚙️</span><span class="lbl" id="quality-lbl">Qualität</span>
     </button>
     <button class="ctrl danger" onclick="leaveRoom()">
       <span class="ic">🚪</span><span class="lbl">Verlassen</span>
     </button>
   </div>
+
+  <!-- Chat -->
+  <div class="hud" id="chat-panel" style="display:none;">
+    <div class="chat-hdr">💬 Chat <button class="chat-close" onclick="toggleChat()">✕</button></div>
+    <div id="chat-msgs"></div>
+    <div class="chat-input-row">
+      <input id="chat-input" placeholder="Nachricht…" onkeydown="chatKey(event)" maxlength="500" autocomplete="off"/>
+      <button onclick="sendChat()">➤</button>
+    </div>
+  </div>
+
+  <!-- Mobiler Joystick (nur Touch) -->
+  <div id="joystick" style="display:none;"><div id="joy-knob"></div></div>
 
   <!-- Hilfe -->
   <div class="hud" id="hud-hint">
@@ -125,6 +159,6 @@
   <div id="toast"></div>
 </div>
 
-<script src="app.js?v=2"></script>
+<script src="app.js?v=3"></script>
 </body>
 </html>

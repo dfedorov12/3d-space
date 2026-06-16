@@ -28,6 +28,11 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+      # Cache-Busting: ?v=… in index.html beim Build durch den Commit-SHA ersetzen.
+      # So lädt der Browser nach jedem Push garantiert die neue app.js/style.css –
+      # ohne manuelles Hochzählen und ohne Rück-Commit.
+      - name: Cache-Busting
+        run: sed -i -E "s/\?v=[A-Za-z0-9]+/?v=${GITHUB_SHA::8}/g" index.html
       - name: Setup Pages
         uses: actions/configure-pages@v5
       - name: Build with Jekyll

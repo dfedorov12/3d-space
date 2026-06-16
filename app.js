@@ -23,6 +23,16 @@ const REQUEST_TO   = 'fedorov@dihag.com';                  // Empfänger der Fre
 // Diese Adressen kommen IMMER rein (Owner/Admins) – auch wenn die Liste leer/nicht lesbar ist.
 const SUPER_ADMINS = ['fedorov@dihag.com'];
 
+// ICE-Server für WebRTC. STUN reicht in offenen Netzen. Im Firmennetz (Firewall / symmetrisches
+// NAT, UDP geblockt) wird ein TURN-Server gebraucht – sonst sehen sich zwei Leute zwar im Raum,
+// hören sich aber nicht. Dann einfach den TURN-Block ausfüllen (Host/User/Passwort eintragen):
+const ICE_SERVERS = [
+  { urls: 'stun:stun.l.google.com:19302' },
+  { urls: 'stun:global.stun.twilio.com:3478' },
+  // { urls: 'turn:DEIN-TURN-HOST:3478',  username: 'USER', credential: 'PASS' },
+  // { urls: 'turns:DEIN-TURN-HOST:5349', username: 'USER', credential: 'PASS' },  // TURN über TLS/443 (firewall-freundlich)
+];
+
 // ════════════════════════════════════════════════════════════════
 // HELPERS
 // ════════════════════════════════════════════════════════════════
@@ -343,6 +353,8 @@ function buildRoom(THREE){
   const screen = new THREE.Mesh(new THREE.PlaneGeometry(3.0, 1.7), makeScreenMat(THREE));
   screen.rotation.y = Math.PI/2; screen.position.set(-ROOM.x-0.21, 1.9, 0);
   board.add(bezel, screen); scene.add(board);
+  // global merken (für „Bildschirm teilen")
+  wallScreen = screen; wallDefaultMap = screen.material.map;
 }
 
 function makeScreenMat(THREE){
@@ -503,10 +515,34 @@ function spawnMyAvatar(){
 // EINGABE / BEWEGUNG
 // ════════════════════════════════════════════════════════════════
 const keys = {};
+function isTyping(){ const a=document.activeElement; return !!a && (a.tagName==='INPUT' || a.tagName==='TEXTAREA' || a.isContentEditable); }
 function setupInput(){
-  addEventListener('keydown', e=>{ keys[e.key.toLowerCase()] = true; });
-  addEventListener('keyup',   e=>{ keys[e.key.toLowerCase()] = false; });
-  addEventListener('blur', ()=>{ for(const k in keys) keys[k]=false; });
+  addEventListener('keydown', e=>{
+    if(e.code==='Space' && pttMode && !isTyping()){ e.preventDefault(); if(!pttActive){ pttActive=true; updateMicLive(); broadcast(); } return; }
+    if(isTyping()) return;
+    keys[e.key.toLowerCase()] = true;
+  });
+  addEventListener('keyup', e=>{
+    if(e.code==='Space' && pttMode){ e.preventDefault(); pttActive=false; updateMicLive(); broadcast(); return; }
+    keys[e.key.toLowerCase()] = false;
+  });
+  addEventListener('blur', ()=>{ for(const k in keys) keys[k]=false; pttActive=false; updateMicLive(); });
+  setupJoystick();
+}
+
+// Mobiler Joystick (nur Touch)
+function setupJoystick(){
+  if(!('ontouchstart' in window) && !navigator.maxTouchPoints) return;
+  const base=$id('joystick'), knob=$id('joy-knob');
+  if(!base) return;
+  base.style.display='block';
+  let active=false, cx=0, cy=0; const R=46;
+  const start=e=>{ active=true; const r=base.getBoundingClientRect(); cx=r.left+r.width/2; cy=r.top+r.height/2; mv(e); };
+  const mv=e=>{ if(!active) return; const t=e.touches?e.touches[0]:e; let dx=t.clientX-cx, dy=t.clientY-cy; const d=Math.hypot(dx,dy)||1; if(d>R){ dx=dx/d*R; dy=dy/d*R; } knob.style.transform=`translate(${dx}px,${dy}px)`; joyStr=dx/R; joyFwd=-dy/R; if(e.cancelable) e.preventDefault(); };
+  const end=()=>{ active=false; joyFwd=joyStr=0; knob.style.transform='translate(0,0)'; };
+  base.addEventListener('touchstart',start,{passive:false});
+  base.addEventListener('touchmove',mv,{passive:false});
+  base.addEventListener('touchend',end); base.addEventListener('touchcancel',end);
 }
 
 function onResize(){
@@ -518,9 +554,10 @@ function handleMovement(dt){
   if(!myAvatar) return;
   const THREE = window.THREE;
   const speed = 3.4;
-  let fwd = (keys['w']||keys['arrowup']?1:0) - (keys['s']||keys['arrowdown']?1:0);
-  let str = (keys['d']||keys['arrowright']?1:0) - (keys['a']||keys['arrowleft']?1:0);
-  if(!fwd && !str) return;
+  let fwd = (keys['w']||keys['arrowup']?1:0) - (keys['s']||keys['arrowdown']?1:0) + joyFwd;
+  let str = (keys['d']||keys['arrowright']?1:0) - (keys['a']||keys['arrowleft']?1:0) + joyStr;
+  fwd = Math.max(-1, Math.min(1, fwd)); str = Math.max(-1, Math.min(1, str));
+  if(Math.abs(fwd) < 0.05 && Math.abs(str) < 0.05) return;
 
   // Richtung relativ zur Kamera (auf XZ-Ebene)
   const camDir = new THREE.Vector3(); camera.getWorldDirection(camDir); camDir.y=0; camDir.normalize();
@@ -575,7 +612,7 @@ function startRenderLoop(){
     });
     // eigenes Sprech-Level
     if(myAvatar){
-      const lv = (hasMic && micEnabled && localAnalyser) ? audioLevel(localAnalyser) : 0;
+      const lv = (isMicLive() && localAnalyser) ? audioLevel(localAnalyser) : 0;
       updateSpeaking({ avatar:myAvatar, _spk:mySpeak }, lv > 0.05);
       mySpeak = myAvatar.userData.ring.visible;
     }
@@ -602,7 +639,18 @@ function audioLevel(an){
 // ════════════════════════════════════════════════════════════════
 let peer, localStream, hasMic=false, micEnabled=true, handUp=false;
 let actx, localAnalyser;
-const peers = new Map();   // peerId → { email, name, avatar, dataConn, call, posAudio, audioEl, analyser, tx, tz, tRy, muted, hand }
+const peers = new Map();   // peerId → { email, name, avatar, dataConn, call, posAudio, audioEl, analyser, tx, tz, tRy, muted, hand, status, screenOut, screenIn, sharing }
+
+// Feature-Zustände
+let screenStream=null;            // mein geteilter Bildschirm-Stream
+let currentPresenter=null;        // peerId des aktuell Teilenden, oder 'me'
+let _presenterName='';
+let wallScreen=null, wallDefaultMap=null;   // Wand-Leinwand-Mesh + Standardtextur
+let pttMode=false, pttActive=false;         // Push-to-Talk
+let lowPerf=false;
+let joyFwd=0, joyStr=0;                      // mobiler Joystick
+let currentMicId=null;
+let _chatOpen=false, _chatUnread=0;
 
 async function enableMicAndJoin(){
   $id('mic-gate').style.display='none';
@@ -634,12 +682,14 @@ function silentStream(){
 
 function initPeer(){
   const myId = peerIdFor(myEmail);
-  peer = new Peer(myId, { debug: 1 });
+  peer = new Peer(myId, { debug: 1, config:{ iceServers: ICE_SERVERS } });
 
   peer.on('open', ()=>{ connectRoster(); setInterval(rescan, 15000); setInterval(heartbeat, 3000); });
 
   peer.on('call', call=>{
-    // Doppel-Calls vermeiden
+    // Bildschirm-Übertragung getrennt behandeln
+    if(call.metadata?.kind === 'screen'){ acceptScreenCall(call); return; }
+    // Doppel-(Voice-)Calls vermeiden
     const ex = peers.get(call.peer);
     if(ex?.call){ try{ call.close(); }catch{} return; }
     call.answer(localStream);
@@ -690,8 +740,10 @@ function ensurePeer(pid, email, name){
     const i = peers.size;
     av.position.set(i%2 ? 2.4 : -2.4, 0, -3 + (Math.floor(i/2)%4)*2);
     scene.add(av);
-    p = { email, name, avatar:av, tx:av.position.x, tz:av.position.z, tRy:0, muted:false, hand:false };
+    p = { email, name, avatar:av, tx:av.position.x, tz:av.position.z, tRy:0, muted:false, hand:false, status:'connecting' };
     peers.set(pid, p);
+    // Wenn ich gerade teile, dem Neuzugang den Bildschirm anbieten
+    if(screenStream) callScreen(pid);
     renderPeople();
   }
   if(email) p.email = email;
@@ -714,9 +766,23 @@ function bindDataConn(conn, email){
 function bindCall(call, email){
   const p = ensurePeer(call.peer, email || call.metadata?.email, call.metadata?.name);
   p.call = call;
+  monitorIce(p, call);
   call.on('stream', stream=> attachRemoteAudio(call.peer, stream));
   call.on('close', ()=> dropPeer(call.peer));
   call.on('error', ()=>{});
+}
+
+// Verbindungs-Status (Ampel) aus dem ICE-Zustand der Voice-Verbindung ableiten
+function monitorIce(p, call){
+  const pc = call.peerConnection; if(!pc || !pc.addEventListener) return;
+  const upd = ()=>{
+    const s = pc.iceConnectionState;
+    if(s==='connected' || s==='completed') p.status='connected';
+    else if(s==='failed' || s==='disconnected' || s==='closed') p.status='failed';
+    else if(p.status!=='connected') p.status='connecting';
+    renderPeople();
+  };
+  pc.addEventListener('iceconnectionstatechange', upd); upd();
 }
 
 function attachRemoteAudio(pid, stream){
@@ -740,6 +806,8 @@ function attachRemoteAudio(pid, stream){
     const an = actx.createAnalyser(); an.fftSize = 512; src.connect(an);
     p.analyser = an;
   }catch{}
+  // Audio empfangen = Medienweg funktioniert → Ampel grün
+  p.status = 'connected'; renderPeople();
 }
 
 function dropPeer(pid){
@@ -747,8 +815,11 @@ function dropPeer(pid){
   try{ p.posAudio?.disconnect(); }catch{}
   try{ p.call?.close(); }catch{}
   try{ p.dataConn?.close(); }catch{}
+  try{ p.screenOut?.close(); }catch{}
+  try{ p.screenIn?.close(); }catch{}
   if(p.audioEl){ p.audioEl.srcObject = null; }
   if(p.avatar) scene.remove(p.avatar);
+  if(currentPresenter===pid) clearWall();
   peers.delete(pid);
   renderPeople();
 }
@@ -759,6 +830,8 @@ function onData(pid, d){
   if(d.email) p.email = d.email;
   if(d.name && d.name!==p.name){ p.name = d.name; updateLabel(p, d.name); }
   if(d.t==='bye'){ dropPeer(pid); return; }
+  if(d.t==='chat'){ appendChat(d.name || p.name || 'Gast', d.text, false); return; }
+  if(d.t==='screen'){ p.sharing = !!d.on; if(!d.on && currentPresenter===pid) clearWall(); updatePresenterBanner(); renderPeople(); return; }
   if(typeof d.x==='number'){ p.tx=d.x; p.tz=d.z; p.tRy=d.ry; }
   if('muted' in d){ p.muted = d.muted; }
   if('hand' in d){ p.hand = d.hand; if(p.avatar) p.avatar.userData.hand.visible = d.hand; }
@@ -774,7 +847,7 @@ function updateLabel(p, name){
 function myState(){
   return { t:'pos', email:myEmail, name:myName,
            x:+myAvatar.position.x.toFixed(2), z:+myAvatar.position.z.toFixed(2),
-           ry:+myAvatar.rotation.y.toFixed(2), muted:!micEnabled, hand:handUp };
+           ry:+myAvatar.rotation.y.toFixed(2), muted:!isMicLive(), hand:handUp };
 }
 function sendState(conn){ try{ if(conn?.open) conn.send(myState()); }catch{} }
 function broadcast(extra){
@@ -792,18 +865,187 @@ function scheduleBroadcast(){
 // ════════════════════════════════════════════════════════════════
 // HUD-STEUERUNG
 // ════════════════════════════════════════════════════════════════
+// ── Mikrofon / Push-to-Talk ──────────────────────────────────────
+function isMicLive(){ if(!hasMic) return false; return pttMode ? pttActive : micEnabled; }
+function updateMicLive(){ if(localStream && hasMic) localStream.getAudioTracks().forEach(t=> t.enabled = isMicLive()); }
+
 function toggleMic(){
   if(!hasMic){ toast('Kein Mikrofon verfügbar'); return; }
+  if(pttMode){ toast('Push-to-Talk aktiv – Leertaste halten zum Sprechen'); return; }
   micEnabled = !micEnabled;
-  localStream.getAudioTracks().forEach(t=> t.enabled = micEnabled);
+  updateMicLive();
   setMicUI(micEnabled);
   broadcast();
 }
 function setMicUI(on){
   const b=$id('btn-mic');
+  b.classList.remove('ptt');
   b.classList.toggle('on', on); b.classList.toggle('off', !on);
   $id('mic-ic').textContent = on ? '🎤' : '🔇';
   $id('mic-lbl').textContent = on ? 'Mikro an' : 'Stumm';
+}
+function togglePTT(){
+  if(!hasMic){ toast('Kein Mikrofon verfügbar'); return; }
+  pttMode = !pttMode;
+  $id('btn-ptt').classList.toggle('on', pttMode);
+  if(pttMode){
+    micEnabled = false;
+    const b=$id('btn-mic'); b.classList.remove('on','off'); b.classList.add('ptt');
+    $id('mic-ic').textContent='🎙️'; $id('mic-lbl').textContent='PTT';
+    toast('Push-to-Talk: Leertaste gedrückt halten zum Sprechen', 4000);
+  }else{
+    micEnabled = true; setMicUI(true);
+  }
+  updateMicLive();
+  broadcast();
+}
+
+// ── Mikrofon-Auswahl ─────────────────────────────────────────────
+async function toggleMicMenu(){
+  const menu = $id('mic-menu');
+  if(menu.style.display==='block'){ menu.style.display='none'; return; }
+  let devs=[];
+  try{ devs = (await navigator.mediaDevices.enumerateDevices()).filter(d=>d.kind==='audioinput'); }catch{}
+  if(!devs.length){ toast('Keine Mikrofone gefunden'); return; }
+  menu.innerHTML = devs.map((d,i)=>
+    `<div class="mic-opt${d.deviceId===currentMicId?' sel':''}" onclick="selectMic('${d.deviceId}')">${esc(d.label || ('Mikrofon '+(i+1)))}</div>`).join('');
+  menu.style.display='block';
+}
+async function selectMic(id){
+  $id('mic-menu').style.display='none';
+  try{
+    const ns = await navigator.mediaDevices.getUserMedia({ audio:{ deviceId:{ exact:id }, echoCancellation:true, noiseSuppression:true, autoGainControl:true } });
+    const newTrack = ns.getAudioTracks()[0];
+    // Track in allen Voice-Calls ersetzen (ohne Renegotiation)
+    peers.forEach(p=>{
+      const pc = p.call?.peerConnection;
+      const s = pc?.getSenders?.().find(x=> x.track && x.track.kind==='audio');
+      if(s) s.replaceTrack(newTrack).catch(()=>{});
+    });
+    // localStream + Analyser aktualisieren
+    localStream.getAudioTracks().forEach(t=>{ t.stop(); localStream.removeTrack(t); });
+    localStream.addTrack(newTrack);
+    if(!hasMic){ hasMic = true; micEnabled = true; }   // war vorher „nur zuhören"
+    newTrack.enabled = isMicLive();
+    currentMicId = id;
+    try{
+      const src = actx.createMediaStreamSource(new MediaStream([newTrack]));
+      localAnalyser = actx.createAnalyser(); localAnalyser.fftSize = 512; src.connect(localAnalyser);
+    }catch{}
+    if(!pttMode) setMicUI(micEnabled);
+    broadcast();
+    toast('🎤 Mikrofon gewechselt');
+  }catch(e){ toast('Mikrofon-Wechsel fehlgeschlagen'); }
+}
+
+// ── Bildschirm teilen ────────────────────────────────────────────
+async function toggleScreenShare(){
+  if(screenStream){ stopScreenShare(); return; }
+  try{
+    screenStream = await navigator.mediaDevices.getDisplayMedia({ video:{ frameRate:15 }, audio:true });
+  }catch(e){ toast('Bildschirm teilen abgebrochen'); return; }
+  screenStream.getVideoTracks()[0].addEventListener('ended', stopScreenShare); // „Stoppen" im Browser-Dialog
+  peers.forEach((p,pid)=> callScreen(pid));
+  showScreenOnWall('me', myName, screenStream);
+  broadcast({ t:'screen', on:true });
+  $id('btn-screen').classList.add('on');
+  $id('screen-lbl').textContent = 'Stoppen';
+  toast('🖥 Du teilst deinen Bildschirm');
+}
+function stopScreenShare(){
+  if(!screenStream) return;
+  try{ screenStream.getTracks().forEach(t=>t.stop()); }catch{}
+  screenStream = null;
+  peers.forEach(p=>{ try{ p.screenOut?.close(); }catch{} p.screenOut=null; });
+  if(currentPresenter==='me') clearWall();
+  broadcast({ t:'screen', on:false });
+  $id('btn-screen').classList.remove('on');
+  $id('screen-lbl').textContent = 'Teilen';
+}
+function callScreen(pid){
+  if(!screenStream || !peer) return;
+  const p = peers.get(pid); if(!p) return;
+  try{ p.screenOut?.close(); }catch{}
+  p.screenOut = peer.call(pid, screenStream, { metadata:{ kind:'screen', email:myEmail, name:myName } });
+}
+function acceptScreenCall(call){
+  call.answer();   // wir senden nichts zurück, nur empfangen
+  const p = peers.get(call.peer); if(p) p.screenIn = call;
+  const meta = call.metadata || {};
+  call.on('stream', stream=> showScreenOnWall(call.peer, meta.name || nameFromEmail(meta.email||'Gast'), stream));
+  call.on('close', ()=>{ if(currentPresenter===call.peer) clearWall(); });
+  call.on('error', ()=>{});
+}
+function showScreenOnWall(who, name, stream){
+  const THREE = window.THREE;
+  let v = $id('screen-video');
+  if(!v){ v=document.createElement('video'); v.id='screen-video'; v.autoplay=true; v.playsInline=true; v.style.display='none'; document.body.appendChild(v); }
+  v.srcObject = stream; v.muted = (who==='me'); v.play().catch(()=>{});
+  if(wallScreen){
+    const tex = new THREE.VideoTexture(v); tex.colorSpace = THREE.SRGBColorSpace;
+    wallScreen.material.map = tex; wallScreen.material.emissiveMap = tex;
+    wallScreen.material.emissiveIntensity = 0.95; wallScreen.material.needsUpdate = true;
+  }
+  currentPresenter = who; _presenterName = name;
+  updatePresenterBanner();
+}
+function clearWall(){
+  const v = $id('screen-video'); if(v) v.srcObject = null;
+  if(wallScreen){
+    wallScreen.material.map = wallDefaultMap; wallScreen.material.emissiveMap = wallDefaultMap;
+    wallScreen.material.emissiveIntensity = 0.5; wallScreen.material.needsUpdate = true;
+  }
+  currentPresenter = null; _presenterName = '';
+  updatePresenterBanner();
+}
+function updatePresenterBanner(){
+  const b = $id('presenter-banner'); if(!b) return;
+  if(currentPresenter){ b.style.display='flex'; $id('presenter-name').textContent = currentPresenter==='me' ? 'Du' : _presenterName; }
+  else b.style.display='none';
+}
+
+// ── Text-Chat ────────────────────────────────────────────────────
+function toggleChat(){
+  _chatOpen = !_chatOpen;
+  $id('chat-panel').style.display = _chatOpen ? 'flex' : 'none';
+  $id('btn-chat').classList.toggle('on', _chatOpen);
+  if(_chatOpen){ _chatUnread=0; updateChatBadge(); $id('chat-input').focus(); scrollChat(); }
+}
+function chatKey(e){ if(e.key==='Enter'){ e.preventDefault(); sendChat(); } }
+function sendChat(){
+  const inp = $id('chat-input'); const text = (inp.value||'').trim(); if(!text) return;
+  inp.value='';
+  appendChat(myName, text, true);
+  peers.forEach(p=>{ try{ if(p.dataConn?.open) p.dataConn.send({ t:'chat', name:myName, text }); }catch{} });
+}
+function appendChat(name, text, isMe){
+  const box = $id('chat-msgs'); if(!box) return;
+  const el = document.createElement('div'); el.className = 'chat-msg' + (isMe?' me':'');
+  el.innerHTML = `<span class="cm-name">${esc(name)}</span><span class="cm-text">${esc(text)}</span>`;
+  box.appendChild(el); scrollChat();
+  if(!_chatOpen && !isMe){ _chatUnread++; updateChatBadge(); toast(`💬 ${name}: ${text.slice(0,42)}`); }
+}
+function scrollChat(){ const b=$id('chat-msgs'); if(b) b.scrollTop = b.scrollHeight; }
+function updateChatBadge(){ const b=$id('chat-badge'); if(!b) return; if(_chatUnread>0){ b.style.display='flex'; b.textContent = _chatUnread>9?'9+':_chatUnread; } else b.style.display='none'; }
+
+// ── Performance-Schalter ─────────────────────────────────────────
+function toggleQuality(){
+  lowPerf = !lowPerf;
+  $id('btn-quality').classList.toggle('on', lowPerf);
+  if(lowPerf){
+    renderer.setPixelRatio(1);
+    renderer.shadowMap.enabled = false;
+    scene.traverse(o=>{ if(o.isLight) o.castShadow = false; });
+    $id('quality-lbl').textContent = 'Sparen';
+    toast('Performance-Sparmodus an');
+  }else{
+    renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+    renderer.shadowMap.enabled = true;
+    const sun = scene.children.find(o=>o.isDirectionalLight); if(sun) sun.castShadow = true;
+    $id('quality-lbl').textContent = 'Qualität';
+    toast('Volle Qualität');
+  }
+  scene.traverse(o=>{ if(o.material){ (Array.isArray(o.material)?o.material:[o.material]).forEach(m=> m.needsUpdate=true); } });
 }
 function toggleHand(){
   handUp = !handUp;
@@ -833,23 +1075,28 @@ function toggleFullscreen(){
 }
 
 function renderPeople(){
-  const list = $id('people-list');
+  const list = $id('people-list'); if(!list) return;
   $id('people-count').textContent = peers.size + 1;
-  let html = personRow(myEmail, myName, true, micEnabled, handUp, mySpeak);
-  peers.forEach(p=>{
+  let html = personRow(myEmail, myName, true, isMicLive()||(!pttMode&&micEnabled), handUp, mySpeak, 'connected', currentPresenter==='me');
+  peers.forEach((p,pid)=>{
     const spk = p.avatar?.userData?.ring?.visible;
-    html += personRow(p.email||p.name, p.name||nameFromEmail(p.email||'Gast'), false, !p.muted, p.hand, spk);
+    html += personRow(p.email||p.name, p.name||nameFromEmail(p.email||'Gast'), false, !p.muted, p.hand, spk, p.status||'connecting', currentPresenter===pid);
   });
   list.innerHTML = html;
 }
-function personRow(email, name, isMe, micOn, hand, speaking){
+function personRow(email, name, isMe, micOn, hand, speaking, status, sharing){
+  const dotClass = isMe ? 'ok' : (status==='connected' ? 'ok' : status==='failed' ? 'bad' : 'wait');
+  const statusTxt = (!isMe && status==='failed') ? 'keine Verbindung'
+                  : (!isMe && status!=='connected') ? 'verbindet…'
+                  : (speaking ? 'spricht…' : (micOn ? 'verbunden' : 'stumm'));
+  const rightIc = sharing ? '🖥' : (hand ? '✋' : (micOn ? '🎙️' : '🔇'));
   return `<div class="person">
-    <div class="p-av ${speaking?'speaking':''}" style="background:${cssColor(email)}">${esc(initials(name))}</div>
+    <div class="p-av ${speaking?'speaking':''}" style="background:${cssColor(email)}">${esc(initials(name))}<span class="p-dot ${dotClass}"></span></div>
     <div class="p-info">
       <div class="p-name ${isMe?'is-me':''}">${esc(name)}${isMe?' (du)':''}</div>
-      <div class="p-status">${speaking?'spricht…':(micOn?'verbunden':'stumm')}</div>
+      <div class="p-status">${statusTxt}</div>
     </div>
-    <div class="p-mic ${micOn?'':'muted'}">${hand?'✋':(micOn?'🎙️':'🔇')}</div>
+    <div class="p-mic ${micOn?'':'muted'}">${rightIc}</div>
   </div>`;
 }
 

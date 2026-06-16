@@ -20,10 +20,15 @@ Da GitHub Pages rein statisch ist, gibt es **keinen Signaling-Server**. Trick: D
 
 ## Bedienung
 
-- **WASD / Pfeiltasten** – im Raum gehen
+- **WASD / Pfeiltasten** (oder Touch-Joystick am Handy) – im Raum gehen
 - **Maus ziehen** – umsehen · **Scrollen** – Zoom
-- **Mikro / Melden / Ansicht / Verlassen** – untere Leiste
 - Näher an eine Person gehen = sie wird lauter
+- Untere Leiste:
+  - 🎤 **Mikro** stummschalten · ▾ **Mikrofon wählen**
+  - 👆 **Push-to-Talk** (dann Leertaste halten zum Sprechen)
+  - ✋ **Melden** · 🖥 **Bildschirm teilen** (erscheint auf der Wand-Leinwand) · 💬 **Chat**
+  - 🎥 **Ansicht** (Folgen/Übersicht) · ⚙️ **Qualität** (Sparmodus) · 🚪 **Verlassen**
+- In der Teilnehmerliste zeigt eine **Ampel** die Verbindung (grün = verbunden, gelb = verbindet, rot = keine Verbindung)
 
 ## Einmalige Einrichtung (durch IT/Owner)
 
@@ -44,3 +49,9 @@ Da GitHub Pages rein statisch ist, gibt es **keinen Signaling-Server**. Trick: D
 - Der öffentliche PeerJS-Broker reicht für interne Nutzung; bei Bedarf später eigenen PeerServer
   hinterlegen (`new Peer(id, { host, port, path })` in `app.js`).
 - Erstes Sprechen erfordert eine Nutzergeste (Browser-Policy) → „Beitreten & sprechen".
+- **TURN-Server (wichtig im Firmennetz):** rein P2P (nur STUN) scheitert oft an Firewall/NAT –
+  dann sieht man sich zwar, hört sich aber nicht. Lösung: in `app.js` den `ICE_SERVERS`-TURN-Block
+  ausfüllen (Host/User/Passwort, idealerweise `turns:…:5349` über TLS/443).
+- **Cache-Busting** ist automatisch: der Deploy-Workflow ersetzt `?v=…` durch den Commit-SHA –
+  manuelles Hochzählen entfällt.
+- **Skaliert** als Voll-Mesh komfortabel bis ~6–8 Personen; für größere Runden wäre ein SFU nötig.

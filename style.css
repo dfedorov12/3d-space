@@ -205,8 +205,66 @@ button{font-family:inherit}
 .mic-gate-card button{padding:11px 26px;border:none;border-radius:12px;cursor:pointer;
   background:linear-gradient(135deg,var(--blue),var(--blue-soft));color:#fff;font-size:14px;font-weight:600}
 
+/* ── Push-to-Talk + Mikro-Auswahl ────────────────────────────────── */
+.ctrl-mic-wrap{position:relative;display:flex;align-items:center}
+.mic-caret{background:transparent;border:none;color:var(--text-dim);cursor:pointer;font-size:12px;padding:0 6px;align-self:center}
+.mic-caret:hover{color:var(--text)}
+#mic-menu{position:absolute;bottom:100%;left:0;margin-bottom:12px;background:var(--panel-solid);
+  border:1px solid var(--border2);border-radius:12px;padding:6px;min-width:210px;max-width:300px;
+  box-shadow:var(--shadow);display:none;z-index:50}
+.mic-opt{padding:8px 12px;border-radius:8px;font-size:13px;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.mic-opt:hover{background:rgba(255,255,255,.1)}
+.mic-opt.sel{color:var(--accent);font-weight:600}
+.ctrl.ptt .ic{background:linear-gradient(135deg,#7c3aed,#a855f7);color:#fff}
+#btn-ptt.on .ic{background:linear-gradient(135deg,#7c3aed,#a855f7);color:#fff}
+
+/* ── Chat-Badge ──────────────────────────────────────────────────── */
+.ctrl .ic{position:relative}
+.chat-badge{position:absolute;top:-6px;right:-10px;background:var(--bad);color:#fff;font-size:10px;
+  font-weight:700;min-width:16px;height:16px;border-radius:8px;display:flex;align-items:center;
+  justify-content:center;padding:0 3px}
+
+/* ── Presenter-Banner ────────────────────────────────────────────── */
+#presenter-banner{top:64px;left:50%;transform:translateX(-50%);background:var(--panel);
+  border:1px solid var(--border2);border-radius:999px;padding:7px 16px;font-size:13px;color:var(--text);
+  display:flex;align-items:center;gap:4px;backdrop-filter:blur(10px);box-shadow:var(--shadow)}
+
+/* ── Chat-Panel ──────────────────────────────────────────────────── */
+#chat-panel{position:absolute;right:18px;bottom:118px;width:300px;max-height:46vh;display:flex;
+  flex-direction:column;background:var(--panel);border:1px solid var(--border);border-radius:16px;
+  backdrop-filter:blur(16px);box-shadow:var(--shadow);overflow:hidden;z-index:25}
+.chat-hdr{padding:10px 14px;font-size:13px;font-weight:700;border-bottom:1px solid var(--border);
+  display:flex;justify-content:space-between;align-items:center}
+.chat-close{background:none;border:none;color:var(--text-dim);cursor:pointer;font-size:14px}
+#chat-msgs{flex:1;overflow:auto;padding:10px 12px;display:flex;flex-direction:column;gap:8px}
+.chat-msg{font-size:13px;line-height:1.4;max-width:90%}
+.chat-msg .cm-name{display:block;font-size:11px;color:var(--text-muted);font-weight:600;margin-bottom:2px}
+.chat-msg .cm-text{color:var(--text);background:rgba(255,255,255,.08);padding:5px 10px;border-radius:10px;display:inline-block;word-break:break-word}
+.chat-msg.me{align-self:flex-end;text-align:right}
+.chat-msg.me .cm-text{background:var(--blue);color:#fff}
+.chat-input-row{display:flex;gap:6px;padding:8px;border-top:1px solid var(--border)}
+.chat-input-row input{flex:1;background:rgba(255,255,255,.06);border:1px solid var(--border2);border-radius:10px;
+  padding:8px 12px;color:var(--text);font-size:13px;font-family:inherit;outline:none}
+.chat-input-row input:focus{border-color:var(--blue)}
+.chat-input-row button{background:var(--blue);border:none;color:#fff;border-radius:10px;padding:0 14px;cursor:pointer;font-size:14px}
+
+/* ── Verbindungs-Ampel in der Teilnehmerliste ────────────────────── */
+.p-dot{position:absolute;right:-2px;bottom:-2px;width:11px;height:11px;border-radius:50%;border:2px solid var(--panel-solid)}
+.p-dot.ok{background:var(--good)}
+.p-dot.wait{background:var(--warn)}
+.p-dot.bad{background:var(--bad)}
+
+/* ── Mobiler Joystick ────────────────────────────────────────────── */
+#joystick{position:absolute;left:24px;bottom:96px;width:120px;height:120px;border-radius:50%;
+  background:rgba(255,255,255,.08);border:1px solid var(--border2);z-index:25;touch-action:none}
+#joy-knob{position:absolute;left:50%;top:50%;width:48px;height:48px;margin:-24px 0 0 -24px;border-radius:50%;
+  background:rgba(255,255,255,.35);border:1px solid rgba(255,255,255,.5)}
+
 @media (max-width:640px){
   #hud-people{display:none}
   #hud-hint{display:none}
   .brand-txt span{display:none}
+  #hud-controls{flex-wrap:wrap;max-width:94vw;justify-content:center}
+  .ctrl{min-width:52px}
+  #chat-panel{width:calc(100vw - 36px);bottom:150px;left:18px;right:18px}
 }
