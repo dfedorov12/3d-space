@@ -242,7 +242,34 @@ function setGender(gx){
   myGender = (gx==='w') ? 'w' : 'm';
   $id('gp-m').classList.toggle('on', myGender==='m');
   $id('gp-w').classList.toggle('on', myGender==='w');
+  updateGenderPreview();
 }
+
+// ── 3D-Vorschau der eigenen Figur im Mikro-Gate ──────────────────
+let pvRenderer, pvScene, pvCam, pvAvatar;
+function buildGenderPreview(){
+  const THREE = window.THREE;
+  const c = $id('gender-preview'); if(!c || pvRenderer) return;
+  pvRenderer = new THREE.WebGLRenderer({ canvas:c, antialias:true, alpha:true });
+  pvRenderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+  pvRenderer.setSize(180, 230, false);
+  pvRenderer.outputColorSpace = THREE.SRGBColorSpace;
+  pvScene = new THREE.Scene();
+  pvCam = new THREE.PerspectiveCamera(38, 180/230, 0.1, 50);
+  pvCam.position.set(0, 1.25, 3.1); pvCam.lookAt(0, 0.92, 0);
+  pvScene.add(new THREE.HemisphereLight(0xffffff, 0x44546a, 1.15));
+  const d = new THREE.DirectionalLight(0xffffff, 1.5); d.position.set(2, 4, 3); pvScene.add(d);
+  updateGenderPreview();
+  pvRenderer.setAnimationLoop(()=>{ if(pvAvatar) pvAvatar.rotation.y += 0.012; pvRenderer.render(pvScene, pvCam); });
+}
+function updateGenderPreview(){
+  if(!pvScene) return;
+  if(pvAvatar) pvScene.remove(pvAvatar);
+  pvAvatar = makeAvatar(window.THREE, myEmail || 'vorschau@x', myName || 'Du', myGender);
+  if(pvAvatar.userData.label) pvAvatar.userData.label.visible = false;  // kein Schild in der Vorschau
+  pvScene.add(pvAvatar);
+}
+function stopGenderPreview(){ try{ pvRenderer?.setAnimationLoop(null); pvRenderer?.dispose(); }catch{} pvRenderer=null; pvScene=null; pvAvatar=null; }
 
 // ════════════════════════════════════════════════════════════════
 // APP-EINSTIEG → Szene rendern, dann Mikro-Gate
@@ -258,7 +285,8 @@ async function enterApp(){
   buildScene();
   startRenderLoop();
 
-  // Mikro-Gate inkl. Geschlechtswahl (Avatar wird erst beim Beitreten gespawnt)
+  // Mikro-Gate inkl. Geschlechtswahl + 3D-Vorschau (Avatar wird erst beim Beitreten gespawnt)
+  buildGenderPreview();
   $id('mic-gate').style.display='flex';
 }
 
@@ -751,6 +779,7 @@ let _chatOpen=false, _chatUnread=0;
 
 async function enableMicAndJoin(){
   $id('mic-gate').style.display='none';
+  stopGenderPreview();
   spawnMyAvatar();   // jetzt steht das gewählte Geschlecht fest
   // AudioContext der THREE-Listener verwenden (gleicher Graph wie das räumliche Audio)
   actx = window.THREE.AudioContext.getContext();
@@ -1199,6 +1228,25 @@ function leaveRoom(){
 function toggleFullscreen(){
   if(document.fullscreenElement) document.exitFullscreen();
   else document.documentElement.requestFullscreen?.().catch(()=>{});
+}
+
+// ── Externe einladen ─────────────────────────────────────────────
+function inviteLink(){ return location.href.split('?')[0].split('#')[0] + '?guest'; }
+function openInvite(){
+  $id('invite-link').textContent = inviteLink();
+  const codeRow = $id('invite-code-row');
+  if(GUEST_PASSCODE){ codeRow.style.display='flex'; $id('invite-code').textContent = GUEST_PASSCODE; }
+  else codeRow.style.display='none';
+  $id('invite-modal').style.display='flex';
+}
+function closeInvite(){ $id('invite-modal').style.display='none'; }
+function copyInvite(){
+  const txt = `Tritt unserem DIHAG 3D-Konferenzraum bei:\n${inviteLink()}` +
+              (GUEST_PASSCODE ? `\nEinladungs-Code: ${GUEST_PASSCODE}` : '');
+  navigator.clipboard?.writeText(txt).then(
+    ()=>{ const b=$id('invite-copy'); b.textContent='✓ Kopiert'; setTimeout(()=>b.textContent='📋 Link kopieren', 2000); },
+    ()=> toast('Kopieren nicht möglich – Link bitte manuell markieren')
+  );
 }
 
 function renderPeople(){

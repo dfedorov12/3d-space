@@ -77,6 +77,22 @@ button{font-family:inherit}
   background:rgba(255,255,255,.06);border:1.5px solid var(--border2);color:var(--text-dim);transition:all .12s}
 .gp-btn:hover{border-color:var(--border2);color:var(--text)}
 .gp-btn.on{background:linear-gradient(135deg,var(--blue),var(--blue-soft));border-color:transparent;color:#fff}
+#gender-preview{display:block;margin:0 auto 14px;width:180px;height:230px;
+  background:radial-gradient(120px 150px at 50% 35%,rgba(56,189,248,.12),rgba(255,255,255,.03));
+  border:1px solid var(--border);border-radius:14px}
+
+/* ── Einladen-Dialog ─────────────────────────────────────────────── */
+#invite-modal{position:absolute;inset:0;z-index:35;display:flex;align-items:center;justify-content:center;
+  background:rgba(7,11,20,.55);backdrop-filter:blur(4px);padding:20px}
+.invite-card{width:440px;max-width:92vw;background:var(--panel-solid);border:1px solid var(--border2);
+  border-radius:18px;box-shadow:var(--shadow);padding:22px}
+.invite-hdr{display:flex;justify-content:space-between;align-items:center;font-size:16px;font-weight:700;margin-bottom:6px}
+.invite-p{color:var(--text-dim);font-size:13px;line-height:1.6;margin-bottom:16px}
+.invite-field{display:flex;align-items:center;gap:10px;background:rgba(255,255,255,.05);
+  border:1px solid var(--border2);border-radius:10px;padding:10px 12px;margin-bottom:10px}
+.invite-lbl{font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;flex-shrink:0;width:42px}
+.invite-field code{font-size:13px;color:var(--accent);word-break:break-all;font-family:'Courier New',monospace}
+#invite-copy{width:100%;margin-top:6px}
 
 /* ── NO ACCESS ───────────────────────────────────────────────────── */
 #no-access{

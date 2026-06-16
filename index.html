@@ -32,7 +32,7 @@
   window.dispatchEvent(new Event('three-ready'));
 </script>
 
-<link rel="stylesheet" href="style.css?v=4"/>
+<link rel="stylesheet" href="style.css?v=5"/>
 </head>
 <body>
 
@@ -86,6 +86,7 @@
     </div>
     <div class="room-pill"><span class="live-dot"></span><span id="room-name">Hauptraum</span></div>
     <div class="hud-spacer"></div>
+    <button class="icon-btn" id="btn-invite" title="Externe einladen" onclick="openInvite()">🔗</button>
     <button class="icon-btn" id="btn-fs" title="Vollbild" onclick="toggleFullscreen()">⛶</button>
     <div class="me-chip">
       <span class="me-name" id="me-name">…</span>
@@ -163,6 +164,7 @@
       <div class="big">🎙️</div>
       <h3>Bereit zum Beitreten</h3>
       <p>Wähle deine Figur und gib das Mikrofon frei. Du kannst es jederzeit stummschalten.</p>
+      <canvas id="gender-preview" width="180" height="230"></canvas>
       <div class="gender-pick">
         <button class="gp-btn on" id="gp-m" onclick="setGender('m')">🧍‍♂️ Männlich</button>
         <button class="gp-btn" id="gp-w" onclick="setGender('w')">🧍‍♀️ Weiblich</button>
@@ -171,9 +173,20 @@
     </div>
   </div>
 
+  <!-- Einladen-Dialog -->
+  <div id="invite-modal" style="display:none;">
+    <div class="invite-card">
+      <div class="invite-hdr">🔗 Externe einladen <button class="chat-close" onclick="closeInvite()">✕</button></div>
+      <p class="invite-p">Schick diesen Link an externe Teilnehmer:innen. Sie brauchen kein Microsoft-Konto.</p>
+      <div class="invite-field"><span class="invite-lbl">Link</span><code id="invite-link"></code></div>
+      <div class="invite-field" id="invite-code-row"><span class="invite-lbl">Code</span><code id="invite-code"></code></div>
+      <button class="boot-btn" id="invite-copy" onclick="copyInvite()">📋 Link kopieren</button>
+    </div>
+  </div>
+
   <div id="toast"></div>
 </div>
 
-<script src="app.js?v=4"></script>
+<script src="app.js?v=5"></script>
 </body>
 </html>

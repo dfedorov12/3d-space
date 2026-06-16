@@ -36,3 +36,9 @@
 - **Externe Gäste**: „Als Gast beitreten" (Name + `GUEST_PASSCODE`, Standard `dihag-3d`, `''`=ohne) ODER Link `?guest`. Kein Microsoft-Konto nötig. Gäste belegen Slot-IDs `…-guest-0..N` (PeerJS `unavailable-id` → nächster Slot). Discovery-Set = interne Mail-IDs ∪ Gäste-Slots → alle finden alle, serverlos.
 - **Neue Figuren**: stilisierte Low-Poly-Menschen (Beine/Schuhe, Torso, Arme/Hände, Hals, Kopf mit Augen, Haare; weiblich mit Rock + langen Haaren, männlich mit Schultern/Hose). Geschlechtswahl im Mikro-Gate (`setGender`), via Metadaten + State an alle übertragen; `rebuildAvatar` bei späterer Änderung.
 - Verifiziert (Eval/Pixel-Readback): Gast-UI + Code-Prüfung (leer/falsch) greifen, beide Geschlechter bauen (je 19 Meshes) + rendern (Kleidung in Personenfarbe, Haare), keine Konsolenfehler.
+
+## 2026-06-16 — Einladen-Button + Figur-Vorschau
+- **Problem:** angemeldete interne Nutzer sehen den Boot-Screen (mit „Als Gast beitreten") nie → kein Weg, Externe einzuladen.
+- **Lösung:** 🔗 „Einladen"-Button in der Top-Leiste → Dialog mit Gast-Link (`…/?guest`) + Code + „Link kopieren" (Clipboard). Funktionen `openInvite/closeInvite/copyInvite/inviteLink`.
+- **Figur sichtbar:** kleine, sich drehende **3D-Vorschau** (`gender-preview`, eigener Mini-Renderer `pvRenderer/pvScene/pvCam/pvAvatar`) im Mikro-Gate; `setGender` wechselt sie live; beim Beitreten `stopGenderPreview`.
+- Verifiziert: Vorschau rendert opak (Kleidungsfarbe), wechselt m↔w, Auswahl markiert; Dialog zeigt Link+Code; keine Konsolenfehler.
