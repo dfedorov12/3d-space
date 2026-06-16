@@ -17,7 +17,7 @@ const SCOPES       = ['User.Read', 'Sites.Read.All', 'Mail.Send'];
 const PERM_SITE    = 'dihag.sharepoint.com:/sites/ticket';  // hier liegt die AppPermissions-Liste
 const PERM_LIST    = 'AppPermissions';
 const APP_KEY      = '3d-space';                            // Spalte "App" in AppPermissions
-const PEER_PREFIX  = 'dihag3dspace--';                      // Namespace auf dem PeerJS-Broker
+const PEER_PREFIX  = 'dihag3dspace-';                       // Namespace auf dem PeerJS-Broker (KEIN '--' → vom Broker abgelehnt)
 const REQUEST_TO   = 'fedorov@dihag.com';                  // Empfänger der Freigabe-Anfrage
 
 // ── FREIGABE ──────────────────────────────────────────────────────
@@ -40,8 +40,17 @@ const SUPER_ADMINS = ['fedorov@dihag.com', 'administrator@dihag.com'];
 // kein echtes Geheimnis. Für mehr Sicherheit bräuchte es einen Server.
 const GUEST_PASSCODE = 'dihag-3d';   // hier ändern oder auf '' setzen (= ohne Code)
 const MAX_GUESTS     = 10;
-const ROOM_CODE      = 'hauptraum';
-function guestSlotId(i){ return PEER_PREFIX + ROOM_CODE + '-guest-' + i; }
+
+// ── RÄUME ─────────────────────────────────────────────────────────
+// Mehrere Räume. Peer-IDs sind RAUM-bezogen → man trifft nur Leute im selben Raum.
+const ROOMS = {
+  hauptraum: { name:'Konferenzraum', icon:'🪑', kind:'conference' },
+  pingpong:  { name:'Tischtennis',   icon:'🏓', kind:'pingpong' },
+};
+let roomKey = 'hauptraum';                                   // aktueller Raum
+// Raum-bezogene Peer-IDs (alles einzelne Bindestriche, broker-konform)
+function uidFor(email){ return PEER_PREFIX + roomKey + '-u-' + String(email).toLowerCase().replace(/[^a-z0-9]/g,''); }
+function guestSlotId(i){ return PEER_PREFIX + roomKey + '-g-' + i; }
 
 // ICE-Server für WebRTC. STUN reicht in offenen Netzen. Im Firmennetz (Firewall / symmetrisches
 // NAT, UDP geblockt) wird ein TURN-Server gebraucht – sonst sehen sich zwei Leute zwar im Raum,
@@ -59,7 +68,7 @@ const ICE_SERVERS = [
 const $id = id => document.getElementById(id);
 const esc = s => String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 
-function peerIdFor(email){ return PEER_PREFIX + String(email).toLowerCase().replace(/[^a-z0-9]/g,''); }
+function peerIdFor(email){ return uidFor(email); }   // raum-bezogen
 function nameFromEmail(email){
   return String(email).split('@')[0].replace(/[._-]+/g,' ').replace(/\b\w/g, c => c.toUpperCase());
 }
@@ -236,6 +245,8 @@ function guestJoin(){
   isGuest = true;
   myName  = name;
   myEmail = 'gast-' + Math.random().toString(36).slice(2,8) + '@extern';  // synthetische Kennung
+  // Gäste brauchen die interne Adressliste, um die internen Teilnehmer zu finden
+  roster = new Set([...ALLOWED, ...SUPER_ADMINS].map(e => e.toLowerCase()));
   enterApp();
 }
 function setGender(gx){
@@ -299,8 +310,28 @@ function ensureThree(){ return _threeReady; }
 let renderer, scene, camera, controls, clock, listener;
 let myAvatar;
 let viewMode = 'follow'; // 'follow' | 'overview'
+let gConf, gPing;                       // Raum-Gruppen (Konferenz / Tischtennis)
+let ball, ballVel, ballCooldown=0, rally=0;   // Tischtennis-Ball
 const ROOM = { x:7.2, z:9.2 };          // halbe Innenmaße (Bewegungsgrenzen)
-const TABLE = { x:1.45, z:4.9 };        // Sperrzone (Tisch)
+const TABLE = { x:1.45, z:4.9 };        // Sperrzone Konferenztisch
+let tableZone = TABLE;                   // aktive Sperrzone (je nach Raum)
+
+function setRoomScene(room){
+  roomKey = room;
+  const ping = room === 'pingpong';
+  if(gConf) gConf.visible = !ping;
+  if(gPing) gPing.visible = ping;
+  if(ball)  ball.visible = ping;
+  tableZone = ping ? { x:PT.hx+0.2, z:PT.hz+0.2 } : TABLE;
+  // Schläger ein-/ausblenden
+  if(myAvatar?.userData.paddle) myAvatar.userData.paddle.visible = ping;
+  peers.forEach(p=>{ if(p.avatar?.userData.paddle) p.avatar.userData.paddle.visible = ping; });
+  // Raumname im HUD
+  const r = ROOMS[room] || {}; if($id('room-name')) $id('room-name').textContent = r.name || room;
+  document.querySelectorAll('.room-opt').forEach(el=> el.classList.toggle('on', el.dataset.room===room));
+  const rp = $id('rally-pill'); if(rp) rp.style.display = ping ? 'flex' : 'none';
+  if(ping){ resetBall(Math.random()<0.5?1:-1); rally=0; updateRally(); }
+}
 
 function buildScene(){
   const THREE = window.THREE;
@@ -335,10 +366,13 @@ function buildScene(){
   buildSky(THREE);
   buildRoom(THREE);
   buildLights(THREE);
-  buildFurniture(THREE);
+  buildFurniture(THREE);   // Konferenz-Möbel → gConf
+  buildPingRoom(THREE);    // Tischtennis → gPing
+  buildBall(THREE);        // Tischtennis-Ball
 
   // Audio-Listener (deine Ohren) – wird ans eigene Avatar gehängt
   listener = new THREE.AudioListener();
+  setRoomScene(roomKey);
 
   addEventListener('resize', onResize);
   setupInput();
@@ -467,36 +501,101 @@ function buildLights(THREE){
 }
 
 function buildFurniture(THREE){
+  gConf = new THREE.Group(); scene.add(gConf);
   // Konferenztisch
   const tableTop = new THREE.Mesh(new THREE.BoxGeometry(2.6, 0.1, 8.4),
     new THREE.MeshStandardMaterial({ color:0x3a2a1f, roughness:0.28, metalness:0.05 }));
   tableTop.position.set(0, 0.75, 0); tableTop.castShadow = tableTop.receiveShadow = true;
-  scene.add(tableTop);
+  gConf.add(tableTop);
   const inlay = new THREE.Mesh(new THREE.BoxGeometry(2.2, 0.02, 8.0),
     new THREE.MeshStandardMaterial({ color:0x4a3727, roughness:0.2, metalness:0.1 }));
-  inlay.position.set(0, 0.81, 0); scene.add(inlay);
+  inlay.position.set(0, 0.81, 0); gConf.add(inlay);
   // Tischbeine (Chrom)
   const legMat = new THREE.MeshStandardMaterial({ color:0xb9c0c8, roughness:0.25, metalness:0.9 });
   for(const sx of [-1.05,1.05]) for(const sz of [-3.6,3.6]){
     const leg = new THREE.Mesh(new THREE.BoxGeometry(0.12,0.74,0.12), legMat);
-    leg.position.set(sx, 0.37, sz); leg.castShadow = true; scene.add(leg);
+    leg.position.set(sx, 0.37, sz); leg.castShadow = true; gConf.add(leg);
   }
 
   // Stühle entlang beider Seiten + Kopfenden
   const seats = [];
   for(const z of [-3,-1,1,3]){ seats.push([-1.95,z, Math.PI/2]); seats.push([1.95,z,-Math.PI/2]); }
   seats.push([0,-4.6,0]); seats.push([0,4.6,Math.PI]);
-  for(const [x,z,ry] of seats){ const ch = makeChair(THREE); ch.position.set(x,0,z); ch.rotation.y = ry; scene.add(ch); }
+  for(const [x,z,ry] of seats){ const ch = makeChair(THREE); ch.position.set(x,0,z); ch.rotation.y = ry; gConf.add(ch); }
 
   // Pflanzen in den Ecken
   for(const [x,z] of [[-6.4,-8.4],[-6.4,8.4],[6.4,-8.4],[6.4,8.4]]){
-    const pl = makePlant(THREE); pl.position.set(x,0,z); scene.add(pl);
+    const pl = makePlant(THREE); pl.position.set(x,0,z); gConf.add(pl);
   }
 
   // Sideboard an der -Z-Wand
   const side = new THREE.Mesh(new THREE.BoxGeometry(4.5,0.9,0.6),
     new THREE.MeshStandardMaterial({ color:0x6b4b34, roughness:0.4 }));
-  side.position.set(-3.5,0.45,-8.7); side.castShadow = side.receiveShadow = true; scene.add(side);
+  side.position.set(-3.5,0.45,-8.7); side.castShadow = side.receiveShadow = true; gConf.add(side);
+}
+
+// ════════════════════════════════════════════════════════════════
+// TISCHTENNIS-RAUM + SPIEL
+// ════════════════════════════════════════════════════════════════
+const PT = { topY:0.76, hx:1.5, hz:0.9, netH:0.16 };  // Tischmaße (halbe Breite/Tiefe)
+function buildPingRoom(THREE){
+  gPing = new THREE.Group(); gPing.visible = false; scene.add(gPing);
+  // Tischplatte
+  const top = new THREE.Mesh(new THREE.BoxGeometry(PT.hx*2, 0.06, PT.hz*2),
+    new THREE.MeshStandardMaterial({ color:0x14613e, roughness:0.55 }));
+  top.position.set(0, PT.topY, 0); top.castShadow = top.receiveShadow = true; gPing.add(top);
+  // weiße Linien (Rand + Mittellinie)
+  const lineMat = new THREE.MeshStandardMaterial({ color:0xffffff, emissive:0x222222, roughness:0.5 });
+  const line=(w,d,x,z)=>{ const m=new THREE.Mesh(new THREE.BoxGeometry(w,0.012,d), lineMat); m.position.set(x,PT.topY+0.035,z); gPing.add(m); };
+  line(PT.hx*2, 0.03, 0, -PT.hz+0.02); line(PT.hx*2, 0.03, 0, PT.hz-0.02);
+  line(0.03, PT.hz*2, -PT.hx+0.02, 0); line(0.03, PT.hz*2, PT.hx-0.02, 0);
+  line(PT.hx*2, 0.02, 0, 0);  // Mittellinie (Längs)
+  // Netz
+  const net = new THREE.Mesh(new THREE.BoxGeometry(0.04, PT.netH, PT.hz*2+0.3),
+    new THREE.MeshStandardMaterial({ color:0xffffff, transparent:true, opacity:0.55 }));
+  net.position.set(0, PT.topY+PT.netH/2, 0); gPing.add(net);
+  // Tischbeine
+  const legMat = new THREE.MeshStandardMaterial({ color:0x222831, roughness:0.4, metalness:0.6 });
+  for(const sx of [-PT.hx+0.15, PT.hx-0.15]) for(const sz of [-PT.hz+0.15, PT.hz-0.15]){
+    const leg = new THREE.Mesh(new THREE.BoxGeometry(0.08, PT.topY, 0.08), legMat);
+    leg.position.set(sx, PT.topY/2, sz); leg.castShadow=true; gPing.add(leg);
+  }
+  // Hinweis-Schild
+  gPing.add(makeLabelMesh(THREE, 'Lauf zum Ball – er springt von deinem Schläger ab', 0, 2.4, 0));
+}
+function makeLabelMesh(THREE, text, x, y, z){
+  const c=document.createElement('canvas'); c.width=512; c.height=64; const g=c.getContext('2d');
+  g.fillStyle='rgba(10,18,32,.7)'; rr(g,0,0,512,64,16); g.fill();
+  g.fillStyle='#cfe9ff'; g.font='600 26px Inter,sans-serif'; g.textAlign='center'; g.textBaseline='middle'; g.fillText(text,256,34);
+  const tex=new THREE.CanvasTexture(c); tex.colorSpace=THREE.SRGBColorSpace;
+  const spr=new THREE.Sprite(new THREE.SpriteMaterial({map:tex,transparent:true,depthTest:false}));
+  spr.scale.set(3.2,0.4,1); spr.position.set(x,y,z); return spr;
+}
+
+function buildBall(THREE){
+  ball = new THREE.Mesh(new THREE.SphereGeometry(0.05, 16, 12),
+    new THREE.MeshStandardMaterial({ color:0xff7a1a, emissive:0xff7a1a, emissiveIntensity:0.25, roughness:0.5 }));
+  ball.castShadow = true; ball.visible = false; scene.add(ball);
+  ballVel = new THREE.Vector3();
+  resetBall(1);
+}
+function resetBall(dir){   // dir: +1 oder -1 (zu welcher Seite serviert wird)
+  if(!ball) return;
+  ball.position.set(0, PT.topY+0.5, 0);
+  ballVel.set(1.7*(dir||1), 1.2, (Math.random()-0.5)*0.6);
+  ballCooldown = 0;
+}
+
+// Schläger pro Avatar (nur im Tischtennis-Raum sichtbar)
+function makePaddle(THREE, email){
+  const g = new THREE.Group();
+  const blade = new THREE.Mesh(new THREE.CylinderGeometry(0.12,0.12,0.02,20),
+    new THREE.MeshStandardMaterial({ color:`hsl(${hueOf(email)},70%,45%)`, roughness:0.5 }));
+  blade.rotation.x = Math.PI/2; g.add(blade);
+  const grip = new THREE.Mesh(new THREE.CylinderGeometry(0.022,0.022,0.12,10),
+    new THREE.MeshStandardMaterial({ color:0x6b4b34, roughness:0.6 }));
+  grip.position.y = -0.13; g.add(grip);
+  return g;
 }
 
 function makeChair(THREE){
@@ -598,7 +697,11 @@ function makeAvatar(THREE, email, name, gender){
   const label = makeLabel(THREE, name, `hsl(${hue},70%,60%)`); label.position.y = topY + 0.34; g.add(label);
   const hand = makeHand(THREE); hand.position.y = topY + 0.72; hand.visible = false; g.add(hand);
 
-  g.userData = { ring, label, hand, gender };
+  // Tischtennis-Schläger (vor der Figur, auf Tischhöhe) – standardmäßig versteckt
+  const paddle = makePaddle(THREE, email);
+  paddle.position.set(0, 0.78, 0.32); paddle.visible = false; g.add(paddle);
+
+  g.userData = { ring, label, hand, gender, paddle };
   return g;
 }
 
@@ -696,7 +799,7 @@ function handleMovement(dt){
   nx = Math.max(-ROOM.x, Math.min(ROOM.x, nx));
   nz = Math.max(-ROOM.z, Math.min(ROOM.z, nz));
   // Tisch-Sperrzone: nicht hineinlaufen
-  if(Math.abs(nx) < TABLE.x && Math.abs(nz) < TABLE.z){ nx = prev.x; nz = prev.z; }
+  if(Math.abs(nx) < tableZone.x && Math.abs(nz) < tableZone.z){ nx = prev.x; nz = prev.z; }
 
   myAvatar.position.set(nx, 0, nz);
   // Avatar in Bewegungsrichtung drehen
@@ -741,9 +844,64 @@ function startRenderLoop(){
       updateSpeaking({ avatar:myAvatar, _spk:mySpeak }, lv > 0.05);
       mySpeak = myAvatar.userData.ring.visible;
     }
+    if(roomKey === 'pingpong') updatePingPong(dt);
     renderer.render(scene, camera);
   });
 }
+
+// ── Tischtennis: Ball-Physik (Autorität) + Sync ──────────────────
+// Autorität = Teilnehmer mit der kleinsten Peer-ID im Raum (deterministisch, ohne Server).
+function isBallAuthority(){
+  if(!myPeerId) return true;
+  for(const id of peers.keys()){ if(id < myPeerId) return false; }
+  return true;
+}
+let _ballSent = 0;
+function updatePingPong(dt){
+  const THREE = window.THREE;
+  // Schläger jedes Avatars an Tischhöhe nachführen + sichtbar halten
+  if(myAvatar?.userData.paddle) myAvatar.userData.paddle.visible = true;
+  peers.forEach(p=>{ if(p.avatar?.userData.paddle) p.avatar.userData.paddle.visible = true; });
+
+  if(isBallAuthority()){
+    ballCooldown = Math.max(0, ballCooldown - dt);
+    ballVel.y -= 6.2 * dt;                               // Schwerkraft
+    ball.position.addScaledVector(ballVel, dt);
+    // Tischabprall
+    if(ball.position.y < PT.topY+0.05 && ballVel.y < 0 &&
+       Math.abs(ball.position.x) < PT.hx && Math.abs(ball.position.z) < PT.hz){
+      ball.position.y = PT.topY+0.05; ballVel.y = Math.abs(ballVel.y)*0.82;
+    }
+    // Schläger-Abprall (eigener + alle Peers)
+    const avs = [myAvatar, ...[...peers.values()].map(p=>p.avatar)].filter(Boolean);
+    if(ballCooldown===0){
+      for(const av of avs){
+        const dx = ball.position.x-av.position.x, dz = ball.position.z-av.position.z;
+        if(dx*dx+dz*dz < 0.45*0.45 && ball.position.y < PT.topY+0.7 && ball.position.y > PT.topY-0.1){
+          ballVel.x = (av.position.x>=0 ? -1 : 1) * (1.6+Math.random()*0.6);
+          ballVel.y = 2.6; ballVel.z = (ball.position.z-av.position.z)*1.5 + (Math.random()-0.5);
+          ballCooldown = 0.35; rally++; updateRally(); break;
+        }
+      }
+    }
+    // raus → neuer Aufschlag
+    if(ball.position.y < 0.2 || Math.abs(ball.position.x) > 6 || Math.abs(ball.position.z) > 5){
+      resetBall(ball.position.x>=0 ? -1 : 1); rally=0; updateRally();
+    }
+    // Ballzustand ~20x/s senden
+    const now = performance.now();
+    if(now - _ballSent > 50){
+      _ballSent = now;
+      const b = ball.position;
+      peers.forEach(p=>{ try{ if(p.dataConn?.open) p.dataConn.send({ t:'ball', x:+b.x.toFixed(2), y:+b.y.toFixed(2), z:+b.z.toFixed(2), r:rally }); }catch{} });
+    }
+  }else if(ballTarget){
+    // Nicht-Autorität: sanft zur empfangenen Position
+    ball.position.lerp(ballTarget, 0.4);
+  }
+}
+let ballTarget = null;
+function updateRally(){ const el=$id('rally'); if(el) el.textContent = rally; }
 let mySpeak=false;
 
 function updateSpeaking(p, on){
@@ -988,6 +1146,7 @@ function onData(pid, d){
   if(d.t==='bye'){ dropPeer(pid); return; }
   if(d.t==='chat'){ appendChat(d.name || p.name || 'Gast', d.text, false); return; }
   if(d.t==='screen'){ p.sharing = !!d.on; if(!d.on && currentPresenter===pid) clearWall(); updatePresenterBanner(); renderPeople(); return; }
+  if(d.t==='ball'){ if(!isBallAuthority() && ball){ if(!ballTarget) ballTarget = new window.THREE.Vector3(); ballTarget.set(d.x,d.y,d.z); ball.position.copy(ballTarget); } if(typeof d.r==='number' && d.r!==rally){ rally=d.r; updateRally(); } return; }
   if(typeof d.x==='number'){ p.tx=d.x; p.tz=d.z; p.tRy=d.ry; }
   if('muted' in d){ p.muted = d.muted; }
   if('hand' in d){ p.hand = d.hand; if(p.avatar) p.avatar.userData.hand.visible = d.hand; }
@@ -1224,6 +1383,27 @@ function leaveRoom(){
   try{ peer?.destroy(); }catch{}
   try{ localStream?.getTracks().forEach(t=>t.stop()); }catch{}
   location.reload();
+}
+
+// ── Raumwechsel ──────────────────────────────────────────────────
+function switchRoom(room){
+  if(!ROOMS[room] || room===roomKey) return;
+  // alte Verbindungen dieses Raums trennen
+  broadcast({ t:'bye' });
+  [...peers.keys()].forEach(dropPeer);
+  try{ peer?.destroy(); }catch{}
+  peer = null; _guestSlot = 0; ballTarget = null;
+  // Szene + Position wechseln, dann im neuen Raum neu vernetzen (raum-bezogene IDs)
+  setRoomScene(room);
+  placeMeInRoom(room);
+  toast((ROOMS[room].icon||'') + ' Raum: ' + (ROOMS[room].name||room));
+  initPeer();
+}
+function placeMeInRoom(room){
+  if(!myAvatar) return;
+  if(room==='pingpong'){ myAvatar.position.set(-2.3, 0, 0); myAvatar.rotation.y = Math.PI/2; }
+  else { myAvatar.position.set(-2.4, 0, 2); myAvatar.rotation.y = Math.PI/2; }
+  if(controls) controls.target.copy(myAvatar.position).add(new window.THREE.Vector3(0,1.2,0));
 }
 function toggleFullscreen(){
   if(document.fullscreenElement) document.exitFullscreen();

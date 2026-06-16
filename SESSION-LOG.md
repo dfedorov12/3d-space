@@ -42,3 +42,10 @@
 - **Lösung:** 🔗 „Einladen"-Button in der Top-Leiste → Dialog mit Gast-Link (`…/?guest`) + Code + „Link kopieren" (Clipboard). Funktionen `openInvite/closeInvite/copyInvite/inviteLink`.
 - **Figur sichtbar:** kleine, sich drehende **3D-Vorschau** (`gender-preview`, eigener Mini-Renderer `pvRenderer/pvScene/pvCam/pvAvatar`) im Mikro-Gate; `setGender` wechselt sie live; beim Beitreten `stopGenderPreview`.
 - Verifiziert: Vorschau rendert opak (Kleidungsfarbe), wechselt m↔w, Auswahl markiert; Dialog zeigt Link+Code; keine Konsolenfehler.
+
+## 2026-06-16 — Getrennte-Räume-Bug + Räume + Tischtennis
+- **Bug 1 (Hauptursache getrennte Räume):** Peer-ID-Präfix war `dihag3dspace--` → der PeerJS-Broker lehnt IDs mit `--` ab. Auf einzelne Bindestriche umgestellt (`dihag3dspace-`).
+- **Bug 2:** Gäste bekamen die interne Adressliste nie (afterLogin wird für Gäste nicht aufgerufen) → suchten nie nach internen Teilnehmern. In `guestJoin` jetzt `roster` aus ALLOWED+SUPER_ADMINS befüllt.
+- **Räume:** `ROOMS` (hauptraum/pingpong), Peer-IDs jetzt RAUM-bezogen (`uidFor`/`guestSlotId` enthalten roomKey) → man trifft nur Leute im selben Raum. Raumwechsel-Schalter in der Top-Leiste, `switchRoom` (trennt Peers, baut Szene um via Gruppen `gConf`/`gPing`, vernetzt im neuen Raum neu). Szene = gemeinsame Hülle (Sky/Wände/Licht) + umschaltbare Möbelgruppen.
+- **Tischtennis:** eigener Raum mit Tisch/Netz/Linien; jeder Avatar hat einen Schläger (nur im Raum sichtbar). Ball hub-los, **Autorität = kleinste Peer-ID** im Raum: simuliert Schwerkraft + Tisch-/Schläger-Abprall + Aufschlag-Reset, sendet Ballposition ~20/s (`{t:'ball'}`); andere lerpen dazu. Ballwechsel-Zähler (`rally`). Spielen = Avatar zum Ball laufen.
+- Verifiziert (Eval/Pixel): IDs ohne `--` & raum-bezogen, Räume schalten Sichtbarkeit korrekt, Ball bewegt sich & bleibt endlich (kein NaN), Schläger/Ball sichtbar nur im Tischtennis-Raum, Tisch rendert, keine Konsolenfehler.

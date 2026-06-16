@@ -32,7 +32,7 @@
   window.dispatchEvent(new Event('three-ready'));
 </script>
 
-<link rel="stylesheet" href="style.css?v=5"/>
+<link rel="stylesheet" href="style.css?v=6"/>
 </head>
 <body>
 
@@ -84,7 +84,12 @@
       <div class="brand-mark">🪑</div>
       <div class="brand-txt"><b>3D-Space</b><span>DIHAG Konferenzraum</span></div>
     </div>
-    <div class="room-pill"><span class="live-dot"></span><span id="room-name">Hauptraum</span></div>
+    <div class="room-switch">
+      <span class="live-dot"></span>
+      <button class="room-opt on" data-room="hauptraum" onclick="switchRoom('hauptraum')">🪑 Konferenz</button>
+      <button class="room-opt" data-room="pingpong" onclick="switchRoom('pingpong')">🏓 Tischtennis</button>
+      <span id="room-name" style="display:none"></span>
+    </div>
     <div class="hud-spacer"></div>
     <button class="icon-btn" id="btn-invite" title="Externe einladen" onclick="openInvite()">🔗</button>
     <button class="icon-btn" id="btn-fs" title="Vollbild" onclick="toggleFullscreen()">⛶</button>
@@ -104,6 +109,9 @@
   <div class="hud" id="presenter-banner" style="display:none;">
     🖥 <b><span id="presenter-name"></span></b>&nbsp;teilt den Bildschirm
   </div>
+
+  <!-- Tischtennis: Ballwechsel-Zähler -->
+  <div class="hud" id="rally-pill" style="display:none;">🏓 Ballwechsel: <b id="rally">0</b></div>
 
   <!-- Steuer-Leiste -->
   <div class="hud" id="hud-controls">
@@ -187,6 +195,6 @@
   <div id="toast"></div>
 </div>
 
-<script src="app.js?v=5"></script>
+<script src="app.js?v=6"></script>
 </body>
 </html>
