@@ -35,14 +35,26 @@ Da GitHub Pages rein statisch ist, gibt es **keinen Signaling-Server**. Trick: D
 1. **Azure-App-Registrierung** `75e627e8-…`: Redirect-URI (SPA) hinzufügen
    `https://dfedorov12.github.io/3d-space/`
 2. **GitHub-Pages** für das Repo `3d-space` aktivieren (Source: GitHub Actions – Workflow liegt bei).
-3. **Personen freigeben** – Zeilen in der Liste `AppPermissions` (`/sites/ticket`) anlegen:
+3. **Interne Personen freigeben** – Mail-Adresse in `app.js` → Liste `ALLOWED` eintragen und pushen:
 
-   | UserEmail | App | Role |
-   |---|---|---|
-   | person@dihag.com | `3d-space` | `viewer` |
+   ```js
+   const ALLOWED = ['fedorov@dihag.com', 'administrator@dihag.com', 'neue.person@dihag.com'];
+   ```
 
-   `Role = none` sperrt wieder. `App = *` gilt für alle Apps.
-   Owner in `SUPER_ADMINS` (siehe `app.js`) kommen immer rein.
+   (Die optionale SharePoint-Liste `AppPermissions` wird zusätzlich gelesen, falls vorhanden – ist aber keine Voraussetzung.)
+
+## Externe Gäste einladen
+
+- Externe ohne Microsoft-Konto klicken auf der Startseite **„Als Gast beitreten"** (oder öffnen den Link
+  `…/3d-space/?guest`), geben ihren Namen + den **Einladungs-Code** ein und sind im Raum.
+- Code festlegen/ändern in `app.js`: `const GUEST_PASSCODE = 'dihag-3d';` (auf `''` setzen = ohne Code).
+  ⚠️ Der Code steht im öffentlichen JS → leichter Schutz vor Zufallsbesuchern, **kein echtes Geheimnis**.
+- Bis zu `MAX_GUESTS` (Standard 10) Gäste gleichzeitig.
+
+## Figuren
+
+- Beim Beitreten wählt jede:r eine Figur: **männlich / weiblich** (stilisierte Low-Poly-Menschen,
+  Kleidung in der persönlichen Farbe). Auswahl wird an alle übertragen.
 
 ## Hinweise
 

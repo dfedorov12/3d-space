@@ -33,6 +33,16 @@ const ALLOWED = [
 // Diese Adressen kommen IMMER rein (Owner/Admins).
 const SUPER_ADMINS = ['fedorov@dihag.com', 'administrator@dihag.com'];
 
+// ── EXTERNE GÄSTE ─────────────────────────────────────────────────
+// Externe ohne Microsoft-Konto können „Als Gast beitreten". Sie belegen einen von
+// MAX_GUESTS Plätzen. Optionaler Einladungs-Code (leer = ohne Code beitreten).
+// Hinweis: Der Code steht im (öffentlichen) JS → leichter Schutz vor Zufallsbesuchern,
+// kein echtes Geheimnis. Für mehr Sicherheit bräuchte es einen Server.
+const GUEST_PASSCODE = 'dihag-3d';   // hier ändern oder auf '' setzen (= ohne Code)
+const MAX_GUESTS     = 10;
+const ROOM_CODE      = 'hauptraum';
+function guestSlotId(i){ return PEER_PREFIX + ROOM_CODE + '-guest-' + i; }
+
 // ICE-Server für WebRTC. STUN reicht in offenen Netzen. Im Firmennetz (Firewall / symmetrisches
 // NAT, UDP geblockt) wird ein TURN-Server gebraucht – sonst sehen sich zwei Leute zwar im Raum,
 // hören sich aber nicht. Dann einfach den TURN-Block ausfüllen (Host/User/Passwort eintragen):
@@ -69,6 +79,7 @@ function toast(msg, ms=2600){
 // AUTH  (MSAL)
 // ════════════════════════════════════════════════════════════════
 let msalApp, account, myEmail, myName;
+let isGuest = false, myPeerId = null, myGender = 'm';
 
 async function initAuth(){
   const redirectUri = window.location.href.split('?')[0].split('#')[0];
@@ -202,20 +213,52 @@ async function requestAccess(){
 }
 
 // ════════════════════════════════════════════════════════════════
+// GÄSTE (extern, ohne Microsoft-Login)
+// ════════════════════════════════════════════════════════════════
+function showGuestForm(){
+  $id('guest-form').style.display = 'flex';
+  $id('boot-guest-btn').style.display = 'none';
+  $id('boot-btn').style.display = 'none';
+  $id('boot-sub').textContent = 'Als Gast beitreten';
+  $id('boot-spinner').style.display = 'none';
+  $id('guest-code-row').style.display = GUEST_PASSCODE ? 'block' : 'none';
+  $id('guest-name').focus();
+}
+function guestKey(e){ if(e.key==='Enter') guestJoin(); }
+function guestJoin(){
+  const name = ($id('guest-name').value||'').trim();
+  const err  = $id('guest-err');
+  if(!name){ err.textContent='Bitte gib deinen Namen ein.'; err.style.display='block'; return; }
+  if(GUEST_PASSCODE){
+    const code = ($id('guest-code').value||'').trim();
+    if(code !== GUEST_PASSCODE){ err.textContent='Falscher Einladungs-Code.'; err.style.display='block'; return; }
+  }
+  isGuest = true;
+  myName  = name;
+  myEmail = 'gast-' + Math.random().toString(36).slice(2,8) + '@extern';  // synthetische Kennung
+  enterApp();
+}
+function setGender(gx){
+  myGender = (gx==='w') ? 'w' : 'm';
+  $id('gp-m').classList.toggle('on', myGender==='m');
+  $id('gp-w').classList.toggle('on', myGender==='w');
+}
+
+// ════════════════════════════════════════════════════════════════
 // APP-EINSTIEG → Szene rendern, dann Mikro-Gate
 // ════════════════════════════════════════════════════════════════
 async function enterApp(){
   $id('boot').style.display='none';
+  $id('no-access').style.display='none';
   $id('app').style.display='block';
   $id('me-name').textContent = myName;
   const av = $id('me-av'); av.textContent = initials(myName); av.style.background = cssColor(myEmail);
 
   await ensureThree();
   buildScene();
-  spawnMyAvatar();
   startRenderLoop();
 
-  // Erst auf Nutzergeste hin Mikro + AudioContext aktivieren (Browser-Policy)
+  // Mikro-Gate inkl. Geschlechtswahl (Avatar wird erst beim Beitreten gespawnt)
   $id('mic-gate').style.display='flex';
 }
 
@@ -456,30 +499,78 @@ function makePlant(THREE){
 // ════════════════════════════════════════════════════════════════
 // AVATARE
 // ════════════════════════════════════════════════════════════════
-function makeAvatar(THREE, email, name){
+// Stilisierte Low-Poly-Figur, männlich ('m') oder weiblich ('w')
+function makeAvatar(THREE, email, name, gender){
+  gender = (gender==='w') ? 'w' : 'm';
   const g = new THREE.Group();
-  const col = new THREE.Color(`hsl(${hueOf(email)}, 60%, 55%)`);
-  const body = new THREE.Mesh(new THREE.CapsuleGeometry(0.28, 0.7, 6, 14),
-    new THREE.MeshStandardMaterial({ color:col, roughness:0.6, metalness:0.05 }));
-  body.position.y = 0.63; body.castShadow = true;
-  const head = new THREE.Mesh(new THREE.SphereGeometry(0.22, 24, 18),
-    new THREE.MeshStandardMaterial({ color:col.clone().offsetHSL(0,-0.1,0.12), roughness:0.5 }));
-  head.position.y = 1.32; head.castShadow = true;
-  // kleine "Nase", damit man die Blickrichtung sieht
-  const nose = new THREE.Mesh(new THREE.ConeGeometry(0.06,0.14,10),
-    new THREE.MeshStandardMaterial({ color:0xffffff, roughness:0.5 }));
-  nose.rotation.x = Math.PI/2; nose.position.set(0,1.32,0.22);
+  const hue = hueOf(email);
+  const M = (c,r=0.6,m=0.04)=> new THREE.MeshStandardMaterial({ color:c, roughness:r, metalness:m });
+  const skins = [0xf1c9a5,0xe6b48f,0xc68642,0x8d5524];
+  const hairs = [0x241a12,0x3a2a1c,0x5a4327,0x9c7a45,0xcdb27a,0x4a4a4a];
+  const clothM = M(new THREE.Color(`hsl(${hue},55%,52%)`), 0.7);  // Shirt / Kleid = Personenfarbe
+  const skinM  = M(skins[hue % skins.length], 0.75);
+  const hairM  = M(hairs[(hue>>3) % hairs.length], 0.8);
+  const trouM  = M(0x2a2f3a, 0.85);
+  const shoeM  = M(0x14181f, 0.5, 0.2);
 
-  // Sprech-Ring
-  const ring = new THREE.Mesh(new THREE.TorusGeometry(0.42,0.05,10,40),
+  const legH = gender==='w' ? 0.70 : 0.78;
+  // Beine + Schuhe
+  for(const sx of [-0.12, 0.12]){
+    const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.09,0.08,legH,12), gender==='w'?skinM:trouM);
+    leg.position.set(sx, legH/2, 0); leg.castShadow=true; g.add(leg);
+    const shoe = new THREE.Mesh(new THREE.BoxGeometry(0.13,0.08,0.24), shoeM);
+    shoe.position.set(sx, 0.04, 0.045); shoe.castShadow=true; g.add(shoe);
+  }
+  const torsoBase = legH + 0.08;
+  // Hüfte + Oberkörper (+ Rock bei weiblich)
+  if(gender==='w'){
+    const skirt = new THREE.Mesh(new THREE.CylinderGeometry(0.17,0.33,0.34,18), clothM);
+    skirt.position.y = legH+0.04; skirt.castShadow=true; g.add(skirt);
+    const torso = new THREE.Mesh(new THREE.CylinderGeometry(0.205,0.155,0.50,16), clothM);
+    torso.position.y = torsoBase+0.22; torso.castShadow=true; g.add(torso);
+  }else{
+    const hip = new THREE.Mesh(new THREE.BoxGeometry(0.34,0.18,0.22), trouM);
+    hip.position.y = legH+0.04; g.add(hip);
+    const torso = new THREE.Mesh(new THREE.CylinderGeometry(0.225,0.2,0.52,16), clothM);
+    torso.position.y = torsoBase+0.22; torso.castShadow=true; g.add(torso);
+    const shoulders = new THREE.Mesh(new THREE.CapsuleGeometry(0.1,0.34,4,8), clothM);
+    shoulders.rotation.z = Math.PI/2; shoulders.position.y = torsoBase+0.46; g.add(shoulders);
+  }
+  const shoulderY = torsoBase + (gender==='w' ? 0.44 : 0.46);
+  // Arme + Hände
+  for(const s of [-1, 1]){
+    const arm = new THREE.Mesh(new THREE.CapsuleGeometry(0.06,0.34,4,8), clothM);
+    arm.position.set(s*(gender==='w'?0.23:0.27), shoulderY-0.2, 0); arm.rotation.z = s*0.1; arm.castShadow=true; g.add(arm);
+    const hnd = new THREE.Mesh(new THREE.SphereGeometry(0.055,10,8), skinM);
+    hnd.position.set(s*(gender==='w'?0.26:0.30), shoulderY-0.40, 0); g.add(hnd);
+  }
+  // Hals + Kopf + Augen
+  const headY = shoulderY + 0.27;
+  const neck = new THREE.Mesh(new THREE.CylinderGeometry(0.06,0.07,0.09,10), skinM);
+  neck.position.y = shoulderY+0.06; g.add(neck);
+  const head = new THREE.Mesh(new THREE.SphereGeometry(0.17,24,18), skinM);
+  head.position.y = headY; head.scale.set(1,1.08,1); head.castShadow=true; g.add(head);
+  for(const sx of [-0.06, 0.06]){
+    const eye = new THREE.Mesh(new THREE.SphereGeometry(0.024,8,8), M(0x161620,0.3));
+    eye.position.set(sx, headY+0.02, 0.152); g.add(eye);
+  }
+  // Haare
+  const cap = new THREE.Mesh(new THREE.SphereGeometry(0.185,20,16,0,Math.PI*2,0,Math.PI*0.62), hairM);
+  cap.position.set(0, headY+0.02, -0.01); g.add(cap);
+  if(gender==='w'){
+    const back = new THREE.Mesh(new THREE.CapsuleGeometry(0.13,0.22,4,10), hairM);
+    back.position.set(0, headY-0.13, -0.11); back.scale.set(1,1,0.6); g.add(back);
+  }
+
+  // Sprech-Ring (am Boden), Namensschild, Hand-Symbol
+  const ring = new THREE.Mesh(new THREE.TorusGeometry(0.4,0.045,10,40),
     new THREE.MeshStandardMaterial({ color:0x38bdf8, emissive:0x38bdf8, emissiveIntensity:1.6, roughness:0.4 }));
-  ring.rotation.x = Math.PI/2; ring.position.y = 0.06; ring.visible = false;
+  ring.rotation.x = Math.PI/2; ring.position.y = 0.05; ring.visible = false; g.add(ring);
+  const topY = headY + 0.2;
+  const label = makeLabel(THREE, name, `hsl(${hue},70%,60%)`); label.position.y = topY + 0.34; g.add(label);
+  const hand = makeHand(THREE); hand.position.y = topY + 0.72; hand.visible = false; g.add(hand);
 
-  const label = makeLabel(THREE, name, `hsl(${hueOf(email)},70%,60%)`);
-  const hand = makeHand(THREE); hand.visible = false;
-
-  g.add(body, head, nose, ring, label, hand);
-  g.userData = { ring, label, hand, col };
+  g.userData = { ring, label, hand, gender };
   return g;
 }
 
@@ -508,7 +599,7 @@ function rr(x,a,b,w,h,r){ x.beginPath(); x.moveTo(a+r,b); x.arcTo(a+w,b,a+w,b+h,
 
 function spawnMyAvatar(){
   const THREE = window.THREE;
-  myAvatar = makeAvatar(THREE, myEmail, myName);
+  myAvatar = makeAvatar(THREE, myEmail, myName, myGender);
   myAvatar.position.set(-2.4, 0, 2);
   myAvatar.rotation.y = Math.PI/2; // Blick zum Tisch (+X)
   myAvatar.userData.label.visible = false; // eigenes Schild ausblenden
@@ -660,6 +751,7 @@ let _chatOpen=false, _chatUnread=0;
 
 async function enableMicAndJoin(){
   $id('mic-gate').style.display='none';
+  spawnMyAvatar();   // jetzt steht das gewählte Geschlecht fest
   // AudioContext der THREE-Listener verwenden (gleicher Graph wie das räumliche Audio)
   actx = window.THREE.AudioContext.getContext();
   if(actx.state==='suspended') await actx.resume();
@@ -686,11 +778,17 @@ function silentStream(){
   return dst.stream;
 }
 
-function initPeer(){
-  const myId = peerIdFor(myEmail);
-  peer = new Peer(myId, { debug: 1, config:{ iceServers: ICE_SERVERS } });
+let _guestSlot = 0, _peerInited = false;
+function initPeer(){ openPeer(isGuest ? guestSlotId(0) : peerIdFor(myEmail)); }
 
-  peer.on('open', ()=>{ connectRoster(); setInterval(rescan, 15000); setInterval(heartbeat, 3000); });
+function openPeer(pid){
+  myPeerId = pid;
+  peer = new Peer(pid, { debug: 1, config:{ iceServers: ICE_SERVERS } });
+
+  peer.on('open', ()=>{
+    connectRoster();
+    if(!_peerInited){ _peerInited = true; setInterval(rescan, 15000); setInterval(heartbeat, 3000); }
+  });
 
   peer.on('call', call=>{
     // Bildschirm-Übertragung getrennt behandeln
@@ -705,48 +803,58 @@ function initPeer(){
   peer.on('connection', conn=> bindDataConn(conn));
 
   peer.on('error', err=>{
-    if(String(err.type)==='peer-unavailable') return; // Gegenstelle offline → normal
+    // Gäste: belegter Platz → nächsten Slot probieren
+    if(err.type==='unavailable-id' && isGuest){
+      try{ peer.destroy(); }catch{}
+      _guestSlot++;
+      if(_guestSlot < MAX_GUESTS) openPeer(guestSlotId(_guestSlot));
+      else toast('Alle Gäste-Plätze belegt – bitte später erneut versuchen', 6000);
+      return;
+    }
+    if(err.type==='peer-unavailable') return;       // Gegenstelle offline → normal
+    if(err.type==='unavailable-id'){ toast('Du bist evtl. in einem anderen Tab schon im Raum.', 5000); return; }
     console.warn('[peer]', err.type, err.message);
   });
   peer.on('disconnected', ()=>{ try{ peer.reconnect(); }catch{} });
 
-  addEventListener('beforeunload', ()=>{ broadcast({ t:'bye' }); try{ peer.destroy(); }catch{} });
+  if(!_peerInited) addEventListener('beforeunload', ()=>{ broadcast({ t:'bye' }); try{ peer.destroy(); }catch{} });
 }
 
-function connectRoster(){
-  roster.forEach(email=>{
-    if(email===myEmail) return;
-    connectPeer(peerIdFor(email), email);
-  });
+// Alle möglichen Gegenstellen: interne Mails (deterministische IDs) + Gäste-Plätze
+function discoveryTargets(){
+  const out = [];
+  roster.forEach(email=>{ const pid = peerIdFor(email); if(pid !== myPeerId) out.push({ pid, email }); });
+  for(let i=0; i<MAX_GUESTS; i++){ const pid = guestSlotId(i); if(pid !== myPeerId) out.push({ pid }); }
+  return out;
 }
+function connectRoster(){ discoveryTargets().forEach(t=> connectPeer(t.pid, t.email)); }
 function rescan(){
-  roster.forEach(email=>{
-    if(email===myEmail) return;
-    const pid = peerIdFor(email);
-    const p = peers.get(pid);
-    if(!p || (!p.dataConn?.open && !p.call)) connectPeer(pid, email);
+  discoveryTargets().forEach(t=>{
+    const p = peers.get(t.pid);
+    if(!p || (!p.dataConn?.open && !p.call)) connectPeer(t.pid, t.email);
   });
 }
 
 function connectPeer(pid, email){
+  const meta = { email:myEmail, name:myName, g:myGender };
   // Daten-Verbindung (Position/Status)
-  const conn = peer.connect(pid, { reliable:false, metadata:{ email:myEmail, name:myName } });
+  const conn = peer.connect(pid, { reliable:false, metadata:meta });
   bindDataConn(conn, email);
   // Audio-Call
-  const call = peer.call(pid, localStream, { metadata:{ email:myEmail, name:myName } });
+  const call = peer.call(pid, localStream, { metadata:meta });
   if(call) bindCall(call, email);
 }
 
-function ensurePeer(pid, email, name){
+function ensurePeer(pid, email, name, gender){
   let p = peers.get(pid);
   if(!p){
     const THREE = window.THREE;
-    const av = makeAvatar(THREE, email||pid, name||nameFromEmail(email||'Gast'));
+    const av = makeAvatar(THREE, email||pid, name||nameFromEmail(email||'Gast'), gender);
     // Startposition: Platz nach Index
     const i = peers.size;
     av.position.set(i%2 ? 2.4 : -2.4, 0, -3 + (Math.floor(i/2)%4)*2);
     scene.add(av);
-    p = { email, name, avatar:av, tx:av.position.x, tz:av.position.z, tRy:0, muted:false, hand:false, status:'connecting' };
+    p = { email, name, avatar:av, gender:(gender==='w'?'w':'m'), tx:av.position.x, tz:av.position.z, tRy:0, muted:false, hand:false, status:'connecting' };
     peers.set(pid, p);
     // Wenn ich gerade teile, dem Neuzugang den Bildschirm anbieten
     if(screenStream) callScreen(pid);
@@ -754,12 +862,24 @@ function ensurePeer(pid, email, name){
   }
   if(email) p.email = email;
   if(name){ p.name = name; updateLabel(p, name); }
+  if(gender && gender!==p.gender){ p.gender = gender; rebuildAvatar(p); }
   return p;
+}
+
+// Avatar neu aufbauen (z.B. wenn Geschlecht erst später bekannt wird), Zustand erhalten
+function rebuildAvatar(p){
+  if(!p.avatar) return;
+  const old = p.avatar, pos = old.position.clone(), ry = old.rotation.y;
+  const av = makeAvatar(window.THREE, p.email||'gast', p.name||'Gast', p.gender);
+  av.position.copy(pos); av.rotation.y = ry;
+  if(p.posAudio) av.add(p.posAudio);          // räumliches Audio behalten
+  av.userData.hand.visible = !!p.hand;
+  scene.remove(old); scene.add(av); p.avatar = av;
 }
 
 function bindDataConn(conn, email){
   conn.on('open', ()=>{
-    const p = ensurePeer(conn.peer, email || conn.metadata?.email, conn.metadata?.name);
+    const p = ensurePeer(conn.peer, email || conn.metadata?.email, conn.metadata?.name, conn.metadata?.g);
     p.dataConn = conn;
     sendState(conn); // sofort meinen Zustand schicken
     renderPeople();
@@ -770,7 +890,7 @@ function bindDataConn(conn, email){
 }
 
 function bindCall(call, email){
-  const p = ensurePeer(call.peer, email || call.metadata?.email, call.metadata?.name);
+  const p = ensurePeer(call.peer, email || call.metadata?.email, call.metadata?.name, call.metadata?.g);
   p.call = call;
   monitorIce(p, call);
   call.on('stream', stream=> attachRemoteAudio(call.peer, stream));
@@ -835,6 +955,7 @@ function onData(pid, d){
   const p = peers.get(pid); if(!p || !d) return;
   if(d.email) p.email = d.email;
   if(d.name && d.name!==p.name){ p.name = d.name; updateLabel(p, d.name); }
+  if(d.g && d.g!==p.gender){ p.gender = d.g; rebuildAvatar(p); }
   if(d.t==='bye'){ dropPeer(pid); return; }
   if(d.t==='chat'){ appendChat(d.name || p.name || 'Gast', d.text, false); return; }
   if(d.t==='screen'){ p.sharing = !!d.on; if(!d.on && currentPresenter===pid) clearWall(); updatePresenterBanner(); renderPeople(); return; }
@@ -851,7 +972,7 @@ function updateLabel(p, name){
 }
 
 function myState(){
-  return { t:'pos', email:myEmail, name:myName,
+  return { t:'pos', email:myEmail, name:myName, g:myGender,
            x:+myAvatar.position.x.toFixed(2), z:+myAvatar.position.z.toFixed(2),
            ry:+myAvatar.rotation.y.toFixed(2), muted:!isMicLive(), hand:handUp };
 }
@@ -1110,13 +1231,16 @@ function personRow(email, name, isMe, micOn, hand, speaking, status, sharing){
 // START
 // ════════════════════════════════════════════════════════════════
 (async function boot(){
+  const wantGuest = new URLSearchParams(location.search).has('guest');
   try{
     const ok = await initAuth();
-    if(ok) await afterLogin();
-    else { $id('boot-sub').textContent=''; $id('boot-spinner').style.display='none'; $id('boot-btn').style.display='block'; }
+    if(ok){ await afterLogin(); return; }
+    $id('boot-sub').textContent=''; $id('boot-spinner').style.display='none';
+    $id('boot-btn').style.display='block'; $id('boot-guest-btn').style.display='block';
+    if(wantGuest) showGuestForm();   // Einladungslink ?guest → direkt Gast-Formular
   }catch(e){
     $id('boot-spinner').style.display='none';
     $id('boot-err').textContent = e.message; $id('boot-err').style.display='block';
-    $id('boot-btn').style.display='block';
+    $id('boot-btn').style.display='block'; $id('boot-guest-btn').style.display='block';
   }
 })();

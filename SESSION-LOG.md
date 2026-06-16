@@ -30,3 +30,9 @@
 
 ### NICHT umgesetzt (brauchen Server-Infrastruktur)
 - SFU-Umstieg (für >8 Personen) und echte WebRTC-Authentifizierung der Peers.
+
+## 2026-06-16 — Freigabe-Fix + externe Gäste + neue Figuren
+- **Freigabe** auf Code-Liste `ALLOWED` in app.js umgestellt (AppPermissions existiert nicht / war im Ticketsystem deaktiviert). administrator@ + fedorov@ freigegeben. SharePoint-Liste nur noch optionaler Zusatz.
+- **Externe Gäste**: „Als Gast beitreten" (Name + `GUEST_PASSCODE`, Standard `dihag-3d`, `''`=ohne) ODER Link `?guest`. Kein Microsoft-Konto nötig. Gäste belegen Slot-IDs `…-guest-0..N` (PeerJS `unavailable-id` → nächster Slot). Discovery-Set = interne Mail-IDs ∪ Gäste-Slots → alle finden alle, serverlos.
+- **Neue Figuren**: stilisierte Low-Poly-Menschen (Beine/Schuhe, Torso, Arme/Hände, Hals, Kopf mit Augen, Haare; weiblich mit Rock + langen Haaren, männlich mit Schultern/Hose). Geschlechtswahl im Mikro-Gate (`setGender`), via Metadaten + State an alle übertragen; `rebuildAvatar` bei späterer Änderung.
+- Verifiziert (Eval/Pixel-Readback): Gast-UI + Code-Prüfung (leer/falsch) greifen, beide Geschlechter bauen (je 19 Meshes) + rendern (Kleidung in Personenfarbe, Haare), keine Konsolenfehler.

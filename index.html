@@ -32,7 +32,7 @@
   window.dispatchEvent(new Event('three-ready'));
 </script>
 
-<link rel="stylesheet" href="style.css?v=3"/>
+<link rel="stylesheet" href="style.css?v=4"/>
 </head>
 <body>
 
@@ -44,6 +44,17 @@
   <div class="boot-sub" id="boot-sub">Anmeldung läuft…</div>
   <div class="boot-err" id="boot-err" style="display:none;"></div>
   <button class="boot-btn" id="boot-btn" style="display:none;" onclick="doLogin()">Mit Microsoft anmelden</button>
+  <button class="boot-guest-btn" id="boot-guest-btn" style="display:none;" onclick="showGuestForm()">Als Gast beitreten (extern)</button>
+
+  <!-- Gast-Formular -->
+  <div id="guest-form" style="display:none;">
+    <input id="guest-name" placeholder="Dein Name" maxlength="40" autocomplete="off" onkeydown="guestKey(event)"/>
+    <div id="guest-code-row" style="display:none;">
+      <input id="guest-code" placeholder="Einladungs-Code" autocomplete="off" onkeydown="guestKey(event)"/>
+    </div>
+    <div class="guest-err" id="guest-err" style="display:none;"></div>
+    <button class="boot-btn" onclick="guestJoin()">Beitreten</button>
+  </div>
 </div>
 
 <!-- ── KEIN ZUGRIFF ───────────────────────────────────────────────── -->
@@ -150,8 +161,12 @@
   <div id="mic-gate">
     <div class="mic-gate-card">
       <div class="big">🎙️</div>
-      <h3>Mikrofon freigeben</h3>
-      <p>Damit du im Raum sprechen kannst, brauchen wir Zugriff auf dein Mikrofon. Du kannst es jederzeit stummschalten.</p>
+      <h3>Bereit zum Beitreten</h3>
+      <p>Wähle deine Figur und gib das Mikrofon frei. Du kannst es jederzeit stummschalten.</p>
+      <div class="gender-pick">
+        <button class="gp-btn on" id="gp-m" onclick="setGender('m')">🧍‍♂️ Männlich</button>
+        <button class="gp-btn" id="gp-w" onclick="setGender('w')">🧍‍♀️ Weiblich</button>
+      </div>
       <button onclick="enableMicAndJoin()">Beitreten &amp; sprechen</button>
     </div>
   </div>
@@ -159,6 +174,6 @@
   <div id="toast"></div>
 </div>
 
-<script src="app.js?v=3"></script>
+<script src="app.js?v=4"></script>
 </body>
 </html>

@@ -62,6 +62,21 @@ button{font-family:inherit}
   transition:transform .12s,box-shadow .12s;
 }
 .boot-btn:hover{transform:translateY(-2px);box-shadow:0 14px 40px rgba(37,99,235,.55)}
+.boot-guest-btn{margin-top:2px;background:none;border:none;color:var(--text-dim);font-size:13px;
+  cursor:pointer;text-decoration:underline;text-underline-offset:3px}
+.boot-guest-btn:hover{color:var(--text)}
+#guest-form{display:flex;flex-direction:column;gap:10px;width:300px;max-width:84vw;margin-top:4px}
+#guest-form input{background:rgba(255,255,255,.07);border:1.5px solid var(--border2);border-radius:10px;
+  padding:11px 14px;color:var(--text);font-size:14px;font-family:inherit;outline:none;width:100%}
+#guest-form input:focus{border-color:var(--blue)}
+.guest-err{color:#fca5a5;font-size:12px}
+
+/* Geschlechtswahl im Mikro-Gate */
+.gender-pick{display:flex;gap:10px;margin:0 0 18px}
+.gp-btn{flex:1;padding:12px 8px;border-radius:12px;cursor:pointer;font-size:13px;font-weight:600;
+  background:rgba(255,255,255,.06);border:1.5px solid var(--border2);color:var(--text-dim);transition:all .12s}
+.gp-btn:hover{border-color:var(--border2);color:var(--text)}
+.gp-btn.on{background:linear-gradient(135deg,var(--blue),var(--blue-soft));border-color:transparent;color:#fff}
 
 /* ── NO ACCESS ───────────────────────────────────────────────────── */
 #no-access{
