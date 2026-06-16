@@ -66,11 +66,12 @@ async function initAuth(){
 async function doLogin(){
   $id('boot-btn').style.display='none';
   $id('boot-err').style.display='none';
-  $id('boot-sub').textContent='Anmeldung läuft…';
+  $id('boot-spinner').style.display='block';
+  $id('boot-sub').textContent='Weiterleitung zur Anmeldung…';
   try{
-    const r = await msalApp.loginPopup({ scopes: SCOPES });
-    account = r.account;
-    await afterLogin();
+    // Redirect statt Popup → kein neues Fenster, kein Popup-Blocker.
+    // Die Rückkehr verarbeitet initAuth() via handleRedirectPromise().
+    await msalApp.loginRedirect({ scopes: SCOPES });
   }catch(e){
     $id('boot-err').textContent = e.message;
     $id('boot-err').style.display='block';
@@ -82,8 +83,9 @@ async function doLogin(){
 
 function doLogout(){
   try{ peer?.destroy(); }catch{}
-  msalApp?.logoutPopup({ account }).catch(()=>{});
-  setTimeout(()=>location.reload(), 300);
+  try{ localStream?.getTracks().forEach(t=>t.stop()); }catch{}
+  // Redirect-Logout (kein Popup); Rückkehr landet wieder auf der Boot-Seite.
+  msalApp?.logoutRedirect({ account }).catch(()=> location.reload());
 }
 
 async function getToken(){
