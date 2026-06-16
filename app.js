@@ -20,8 +20,18 @@ const APP_KEY      = '3d-space';                            // Spalte "App" in A
 const PEER_PREFIX  = 'dihag3dspace--';                      // Namespace auf dem PeerJS-Broker
 const REQUEST_TO   = 'fedorov@dihag.com';                  // Empfänger der Freigabe-Anfrage
 
-// Diese Adressen kommen IMMER rein (Owner/Admins) – auch wenn die Liste leer/nicht lesbar ist.
-const SUPER_ADMINS = ['fedorov@dihag.com'];
+// ── FREIGABE ──────────────────────────────────────────────────────
+// Wer den Raum betreten darf. Einfach hier eintragen und pushen (oder Claude Bescheid sagen).
+// Diese Liste ist gleichzeitig das Teilnehmer-Verzeichnis für die Sprachverbindung.
+// (Optional wird zusätzlich die SharePoint-Liste AppPermissions gelesen, falls vorhanden.)
+const ALLOWED = [
+  'fedorov@dihag.com',
+  'administrator@dihag.com',
+  // 'max.mustermann@dihag.com',
+];
+
+// Diese Adressen kommen IMMER rein (Owner/Admins).
+const SUPER_ADMINS = ['fedorov@dihag.com', 'administrator@dihag.com'];
 
 // ICE-Server für WebRTC. STUN reicht in offenen Netzen. Im Firmennetz (Firewall / symmetrisches
 // NAT, UDP geblockt) wird ein TURN-Server gebraucht – sonst sehen sich zwei Leute zwar im Raum,
@@ -143,27 +153,23 @@ async function afterLogin(){
   myEmail = (account?.username || '').toLowerCase();
   myName  = account?.name || nameFromEmail(myEmail);
 
-  let listOk = true;
-  try{ roster = await loadRoster(); }
-  catch(e){ listOk = false; roster = new Set(); console.warn('[roster]', e.message); }
+  // Freigabeliste = Code-Liste (Hauptquelle) ∪ Super-Admins ∪ optional SharePoint AppPermissions
+  roster = new Set();
+  ALLOWED.forEach(e => roster.add(e.toLowerCase()));
+  SUPER_ADMINS.forEach(e => roster.add(e.toLowerCase()));
+  try{ (await loadRoster()).forEach(e => roster.add(e)); }   // existiert die Liste nicht → einfach ignorieren
+  catch(e){ /* AppPermissions optional – kein Fehler */ }
 
-  const isAdmin = SUPER_ADMINS.includes(myEmail);
-  const allowed = isAdmin || roster.has(myEmail);
-  // Admins immer ins Verzeichnis, damit sie für andere auffindbar sind
-  SUPER_ADMINS.forEach(a => roster.add(a));
-
-  if(!allowed){ showNoAccess(listOk); return; }
-  if(isAdmin && !listOk) toast('Hinweis: AppPermissions-Liste nicht lesbar – du bist als Admin allein im Raum.', 5000);
-
+  if(!roster.has(myEmail)){ showNoAccess(); return; }
   enterApp();
 }
 
-function showNoAccess(listOk){
+function showNoAccess(){
   $id('boot').style.display='none';
   $id('no-access').style.display='flex';
-  $id('nac-msg').textContent = listOk
-    ? `Du (${myEmail}) bist für diesen Raum noch nicht freigegeben. Stelle eine Anfrage – die IT schaltet dich frei.`
-    : `Die Freigabeliste konnte nicht gelesen werden. Bitte wende dich an die IT.`;
+  $id('nac-msg').textContent =
+    `Du (${myEmail}) bist für diesen Raum noch nicht freigegeben. ` +
+    `Stelle eine Anfrage – der Owner schaltet dich frei.`;
 }
 
 async function requestAccess(){
@@ -181,7 +187,7 @@ async function requestAccess(){
   <tr><td style="padding:4px 12px 4px 0;color:#666">App</td><td>3d-space</td></tr>
   <tr><td style="padding:4px 12px 4px 0;color:#666">Datum</td><td>${new Date().toLocaleString('de-DE')}</td></tr>
 </table>
-<p style="margin-top:16px">Freigabe: Eintrag in der Liste <strong>AppPermissions</strong> mit App=<code>3d-space</code>, Role=<code>viewer</code>.</p>` },
+<p style="margin-top:16px">Freigabe: Mail-Adresse in <strong>app.js</strong> → Liste <code>ALLOWED</code> eintragen und pushen.</p>` },
         toRecipients:[{ emailAddress:{ address: REQUEST_TO } }]
       },
       saveToSentItems:false
