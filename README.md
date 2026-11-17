@@ -38,7 +38,7 @@ Da GitHub Pages rein statisch ist, gibt es **keinen Signaling-Server**. Trick: D
 3. **Interne Personen freigeben** – Mail-Adresse in `app.js` → Liste `ALLOWED` eintragen und pushen:
 
    ```js
-   const ALLOWED = ['fedorov@dihag.com', 'administrator@dihag.com', 'neue.person@dihag.com'];
+   const ALLOWED = ['vorname.nachname@dihag.com', 'administrator@dihag.com', 'neue.person@dihag.com'];
    ```
 
    (Die optionale SharePoint-Liste `AppPermissions` wird zusätzlich gelesen, falls vorhanden – ist aber keine Voraussetzung.)
