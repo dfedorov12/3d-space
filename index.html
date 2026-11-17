@@ -5,8 +5,6 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no"/>
 <meta http-equiv="Cache-Control" content="no-cache,no-store,must-revalidate"/>
 <title>DIHAG · 3D-Space</title>
-<link rel="preconnect" href="https://fonts.googleapis.com"/>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet"/>
 
 <!-- Auth -->
 <script src="https://alcdn.msauth.net/browser/2.38.2/js/msal-browser.min.js"></script>
@@ -32,7 +30,8 @@
   window.dispatchEvent(new Event('three-ready'));
 </script>
 
-<link rel="stylesheet" href="style.css?v=6"/>
+<link rel="preload" as="font" type="font/woff2" href="assets/fonts/inter-latin.woff2" crossorigin/>
+<link rel="stylesheet" href="style.css?v=7"/>
 </head>
 <body>
 
@@ -195,6 +194,6 @@
   <div id="toast"></div>
 </div>
 
-<script src="app.js?v=6"></script>
+<script src="app.js?v=7"></script>
 </body>
 </html>
