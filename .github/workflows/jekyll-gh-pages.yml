@@ -48,7 +48,7 @@ jobs:
   deploy:
     environment:
       name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
+      url: ${{ steps.deployment.outputs.page_url || steps.deployment2.outputs.page_url }}
     runs-on: ubuntu-latest
     needs: build
     steps:
@@ -69,4 +69,16 @@ jobs:
 
       - name: Deploy to GitHub Pages
         id: deployment
+        continue-on-error: true   # zweiter Versuch weiter unten
+        uses: actions/deploy-pages@v4
+
+      # deploy-pages sieht das Paket manchmal auch nach dem Warten noch nicht (25.11.2026 in
+      # e-rechnung). Dann nach einer halben Minute ein zweiter Versuch. Scheitert auch der, ist der Lauf rot.
+      - name: Vor dem zweiten Versuch warten
+        if: steps.deployment.outcome == 'failure'
+        run: sleep 30
+
+      - name: Veröffentlichen, zweiter Versuch
+        id: deployment2
+        if: steps.deployment.outcome == 'failure'
         uses: actions/deploy-pages@v4
